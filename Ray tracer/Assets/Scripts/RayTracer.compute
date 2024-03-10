@@ -1,0 +1,121 @@
+#pragma kernel TraceRays // 0
+
+#include "MathResourcesRT.hlsl"
+
+static const int ThreadsNum = 32;
+
+// Constants
+const int SpheresNum;
+
+// View settings
+const int2 Resolution;
+const float viewSpaceWidth;
+const float viewSpaceHeight;
+const float PlaneOffset;
+
+// Camera orientation
+const float3 CameraPos;
+const float3 CameraRotation;
+
+struct Ray
+{
+    float3 origin;
+    float3 dir;
+};
+
+struct Sphere
+{
+    float3 position;
+    float radius;
+};
+
+struct HitInfo
+{
+    bool didHit;
+    float dst;
+    float3 hitPoint;
+    float3 normal;
+};
+
+RWStructuredBuffer<Sphere> Spheres;
+
+RWTexture2D<float4> Result;
+
+float3 ApplyCameraTransform (float3 point_)
+{
+    float3x3 rotationX = float3x3(
+        1, 0, 0,
+        0, cos(CameraRotation.x), -sin(CameraRotation.x),
+        0, sin(CameraRotation.x), cos(CameraRotation.x)
+    );
+    float3x3 rotationY = float3x3(
+        cos(CameraRotation.y), 0, sin(CameraRotation.y),
+        0, 1, 0,
+        -sin(CameraRotation.y), 0, cos(CameraRotation.y)
+    );
+    float3x3 rotationZ = float3x3(
+        cos(CameraRotation.z), -sin(CameraRotation.z), 0,
+        sin(CameraRotation.z), cos(CameraRotation.z), 0,
+        0, 0, 1
+    );
+
+    // Apply rotations in the order of Z, Y, X
+    point_ = mul(rotationZ, point_);
+    point_ = mul(rotationY, point_);
+    point_ = mul(rotationX, point_);
+
+    return point_;
+}
+
+HitInfo CircleRayIntersect(Ray ray, Sphere sphere)
+{
+    HitInfo hitInfo;
+    hitInfo.didHit = false;
+
+    // From the equation: sqrLength(rayOrigin + rayDir * dst) = radius^2
+    // Solving for dst results in a quadratic equation with coefficients:
+    float3 oc = ray.origin - sphere.position;
+    float a = dot(ray.dir, ray.dir);
+    float b = 2.0 * dot(oc, ray.dir);
+    float c = dot(oc, oc) - sqr(sphere.radius);
+    float discriminant = b * b - 4.0 * a * c;
+
+    if (discriminant > 0)
+    {
+        hitInfo.didHit = true;
+        hitInfo.dst = (-b - sqrt(discriminant)) / (2.0 * a);
+        hitInfo.hitPoint = ray.origin + hitInfo.dst * ray.dir;
+        hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position);
+    }
+
+    return hitInfo;
+}
+
+[numthreads(ThreadsNum,ThreadsNum,1)]
+void TraceRays (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
+
+    float LocalPixelPosX = ((float)id.x / Resolution.x - 0.5) * viewSpaceWidth;
+    float LocalPixelPosY = ((float)id.y / Resolution.y - 0.5) * viewSpaceHeight;
+    float3 offsetLocalPixelPos = float3(LocalPixelPosX, LocalPixelPosY, PlaneOffset); // PlaneOffset must be positive
+    float3 transformedLocalPixelPos = ApplyCameraTransform(offsetLocalPixelPos);
+
+    Ray startRay;
+    startRay.origin = CameraPos;
+    startRay.dir = normalize(transformedLocalPixelPos - CameraPos); // Calculate direction correctly
+
+    bool hit = false;
+    for (int i = 0; i < SpheresNum && !hit; i++)
+    {
+        HitInfo hitInfo = CircleRayIntersect(startRay, Spheres[i]);
+        if (hitInfo.didHit)
+        {
+            hit = true;
+        }
+    }
+
+    Result[id.xy] = hit
+    ? float4(1, 1, 1, 0)
+    : float4(0, 0, 0, 0);
+}
