@@ -9,12 +9,12 @@ const int SpheresNum;
 
 // View settings
 const int2 Resolution;
+const int MaxBounceCount;
 const float viewSpaceWidth;
 const float viewSpaceHeight;
-const float PlaneOffset;
 
 // Camera orientation
-const float3 CameraPos;
+const float3 WorldSpaceCameraPos;
 const float3 CameraRotation;
 
 struct Ray
@@ -35,6 +35,11 @@ struct HitInfo
     float dst;
     float3 hitPoint;
     float3 normal;
+};
+
+struct TraceInfo
+{
+    float3 rgbVal;
 };
 
 RWStructuredBuffer<Sphere> Spheres;
@@ -59,15 +64,16 @@ float3 ApplyCameraTransform (float3 point_)
         0, 0, 1
     );
 
-    // Apply rotations in the order of Z, Y, X
+    // Apply rotations in the order of Z, X, Y
+    // Applying the rotation matrices in the order of Z, Y, X, results in issues when rotating around the x axis (don't know why)
     point_ = mul(rotationZ, point_);
-    point_ = mul(rotationY, point_);
     point_ = mul(rotationX, point_);
+    point_ = mul(rotationY, point_);
 
     return point_;
 }
 
-HitInfo CircleRayIntersect(Ray ray, Sphere sphere)
+HitInfo CircleRayIntersect (Ray ray, Sphere sphere)
 {
     HitInfo hitInfo;
     hitInfo.didHit = false;
@@ -91,31 +97,57 @@ HitInfo CircleRayIntersect(Ray ray, Sphere sphere)
     return hitInfo;
 }
 
+TraceInfo Trace (Ray ray, int maxBounceCount)
+{
+    TraceInfo traceInfo;
+    traceInfo.rgbVal = float3(1, 1, 1);
+
+    return traceInfo;
+}
+
 [numthreads(ThreadsNum,ThreadsNum,1)]
 void TraceRays (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
 
-    float LocalPixelPosX = ((float)id.x / Resolution.x - 0.5) * viewSpaceWidth;
-    float LocalPixelPosY = ((float)id.y / Resolution.y - 0.5) * viewSpaceHeight;
-    float3 offsetLocalPixelPos = float3(LocalPixelPosX, LocalPixelPosY, PlaneOffset); // PlaneOffset must be positive
-    float3 transformedLocalPixelPos = ApplyCameraTransform(offsetLocalPixelPos);
+    // Calculate local ray start position
+    float rayPosLocalX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
+    float rayPosLocalY = (float(id.y) / Resolution.y - 0.5) * 2.0 * viewSpaceHeight;
+    float3 rayPosLocalOffset = float3(rayPosLocalX, rayPosLocalY, -1.0); // PlaneOffset must be positive
 
+    // Transform ray position from local space to world space
+    float3 rayPosWorld = ApplyCameraTransform(rayPosLocalOffset) + WorldSpaceCameraPos;
+
+    // Calculate ray direction
+    float3 rayDirLocal = normalize(rayPosLocalOffset);
+    float3 rayDirWorld = normalize(ApplyCameraTransform(rayDirLocal)); // Transform to world space
+
+    // Set ray values
     Ray startRay;
-    startRay.origin = CameraPos;
-    startRay.dir = normalize(transformedLocalPixelPos - CameraPos); // Calculate direction correctly
+    startRay.origin = WorldSpaceCameraPos;
+    startRay.dir = rayDirWorld;
 
-    bool hit = false;
-    for (int i = 0; i < SpheresNum && !hit; i++)
+    // Trace the ray through the scene
+    for (int i = 0; i < SpheresNum; i++)
     {
+        // first ray collision
         HitInfo hitInfo = CircleRayIntersect(startRay, Spheres[i]);
         if (hitInfo.didHit)
         {
-            hit = true;
+            // Only render ray hits in front of the camera
+            if (0 < dot(startRay.dir, float3(hitInfo.hitPoint - WorldSpaceCameraPos)))
+            {
+                // Trace ray further through the scene
+                Ray secondRay;
+                secondRay = startRay;
+                TraceInfo traceInfo = Trace(secondRay, MaxBounceCount - 1);
+
+                Result[id.xy] = float4(traceInfo.rgbVal.x, traceInfo.rgbVal.y, traceInfo.rgbVal.z, 0);
+                return;
+            }
         }
     }
 
-    Result[id.xy] = hit
-    ? float4(1, 1, 1, 0)
-    : float4(0, 0, 0, 0);
+    // Return default background color (no ray hit in front of camera)
+    Result[id.xy] = float4(0, 0, 0, 0);
 }

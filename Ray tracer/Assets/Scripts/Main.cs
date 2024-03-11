@@ -5,18 +5,23 @@ using System;
 public class Main : MonoBehaviour
 {
     [Header("Render settings")]
-    public float PlaneOffset;
     public float fieldOfView;
     public int2 Resolution;
+
+    [Header("RT settings")]
+    [Range(1, 10)] public int MaxBounceCount;
+
     [Header("Scene objects")]
     public float4[] SpheresInput; // xyz: pos; w: radii
+
     [Header("References")]
     public ComputeShader rayTracerShader;
+
+    // Private variables
     private RenderTexture renderTexture;
     private int RayTracerThreadSize = 32; // /32
     private Sphere[] Spheres;
     private ComputeBuffer SphereBuffer;
-
     private bool ProgramStarted = false;
 
     public struct Sphere
@@ -48,9 +53,10 @@ public class Main : MonoBehaviour
     void UpdatePerFrame()
     {
         // Camera position
-        float3 cameraPos = transform.position;
-        float[] cameraPosArray = new float[] { cameraPos.x, cameraPos.y, cameraPos.z };
-        rayTracerShader.SetFloats("CameraPos", cameraPosArray);
+        float3 worldSpaceCameraPos = transform.position;
+        worldSpaceCameraPos.z = -worldSpaceCameraPos.z; // Invert z
+        float[] worldSpaceCameraPosArray = new float[] { worldSpaceCameraPos.x, worldSpaceCameraPos.y, worldSpaceCameraPos.z };
+        rayTracerShader.SetFloats("WorldSpaceCameraPos", worldSpaceCameraPosArray);
 
         // Camera orientation
         float3 cameraRot = transform.rotation.eulerAngles;
@@ -75,14 +81,14 @@ public class Main : MonoBehaviour
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rayTracerShader.SetInts("Resolution", resolutionArray);
 
+        rayTracerShader.SetInts("MaxBounceCount", MaxBounceCount);
+
         float aspectRatio = Resolution.x / Resolution.y;
         float fieldOfViewRad = fieldOfView * Mathf.PI / 180;
         float viewSpaceHeight = Mathf.Tan(fieldOfViewRad * 0.5f);
         float viewSpaceWidth = aspectRatio * viewSpaceHeight;
         rayTracerShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
         rayTracerShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
-
-        rayTracerShader.SetFloat("PlaneOffset", PlaneOffset);
     }
 
     void UpdateSphereData()
