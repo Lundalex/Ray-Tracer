@@ -6,16 +6,22 @@ static const int ThreadsNum = 32;
 
 // Constants
 const int SpheresNum;
+static const float FLT_MAX = 99999999999.0; // supplement for maximum float val
 
 // View settings
 const int2 Resolution;
 const int MaxBounceCount;
+const int RaysPerPixel;
 const float viewSpaceWidth;
 const float viewSpaceHeight;
 
 // Camera orientation
 const float3 WorldSpaceCameraPos;
 const float3 CameraRotation;
+
+// Per frame
+const int FrameRand; // "random" value from 0 to 999999, reset each frame
+const int FrameCount; // Each frame, FrameCount++
 
 struct Ray
 {
@@ -27,6 +33,13 @@ struct Sphere
 {
     float3 position;
     float radius;
+    int materialTypeFlag;
+};
+
+struct MaterialType
+{
+    float3 color;
+    float brightness;
 };
 
 struct HitInfo
@@ -35,13 +48,16 @@ struct HitInfo
     float dst;
     float3 hitPoint;
     float3 normal;
+    MaterialType materialType;
 };
 
 struct TraceInfo
 {
-    float3 rgbVal;
+    float3 rayColor;
+    float3 incomingLight;
 };
 
+RWStructuredBuffer<MaterialType> MaterialTypes;
 RWStructuredBuffer<Sphere> Spheres;
 
 RWTexture2D<float4> Result;
@@ -73,34 +89,76 @@ float3 ApplyCameraTransform (float3 point_)
     return point_;
 }
 
-HitInfo CircleRayIntersect (Ray ray, Sphere sphere)
+HitInfo GetRayCollision (Ray ray)
 {
     HitInfo hitInfo;
-    hitInfo.didHit = false;
+    hitInfo.dst = FLT_MAX;
 
-    // From the equation: sqrLength(rayOrigin + rayDir * dst) = radius^2
-    // Solving for dst results in a quadratic equation with coefficients:
-    float3 oc = ray.origin - sphere.position;
-    float a = dot(ray.dir, ray.dir);
-    float b = 2.0 * dot(oc, ray.dir);
-    float c = dot(oc, oc) - sqr(sphere.radius);
-    float discriminant = b * b - 4.0 * a * c;
-
-    if (discriminant > 0)
+    for (int i = 0; i < SpheresNum; i++)
     {
-        hitInfo.didHit = true;
-        hitInfo.dst = (-b - sqrt(discriminant)) / (2.0 * a);
-        hitInfo.hitPoint = ray.origin + hitInfo.dst * ray.dir;
-        hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position);
+        Sphere sphere = Spheres[i];
+        // From the equation: sqrLength(rayOrigin + rayDir * dst) = radius^2
+        // Solving for dst results in a quadratic equation with coefficients:
+        float3 oc = ray.origin - sphere.position;
+        float a = dot(ray.dir, ray.dir);
+        float b = 2.0 * dot(oc, ray.dir);
+        float c = dot(oc, oc) - sqr(sphere.radius);
+        float discriminant = b * b - 4.0 * a * c;
+
+        // Validate ray-sphere hit
+        if (discriminant > 0)
+        {
+            float dst = (-b - sqrt(discriminant)) / (2.0 * a);
+            float3 hitPoint = ray.origin + dst * ray.dir;
+
+            // Only render the hit nearest to the camera
+            // Also only render ray hits in the positive ray direction
+            if (dst < hitInfo.dst && 0 <= dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.dst = dst;
+                hitInfo.hitPoint = hitPoint;
+                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position); // tangent always inline with sphere radius dir
+                hitInfo.materialType = MaterialTypes[sphere.materialTypeFlag];
+            }
+        }
     }
 
     return hitInfo;
 }
 
-TraceInfo Trace (Ray ray, int maxBounceCount)
+TraceInfo Trace (Ray ray, inout int state)
 {
     TraceInfo traceInfo;
-    traceInfo.rgbVal = float3(1, 1, 1);
+    traceInfo.rayColor = float3(1, 1, 1); // Default background rgb color is (0, 0, 0)
+    traceInfo.incomingLight = float3(0, 0, 0);
+
+    for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
+    {
+        HitInfo hitInfo = GetRayCollision(ray);
+        
+        if (hitInfo.didHit)
+        {
+            // Set new ray data
+            ray.origin = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
+            ray.dir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+            if (dot(hitInfo.normal, ray.dir) < 0)
+            {
+                ray.dir = -ray.dir;
+            }
+
+            // Calculate new traceInfo values
+            MaterialType material = hitInfo.materialType;
+            float3 emittedLight = material.color * material.brightness;
+            float lightStrength = dot(hitInfo.normal, ray.dir);
+            traceInfo.incomingLight += emittedLight * traceInfo.rayColor;
+            traceInfo.rayColor *= material.color * lightStrength * 2.0;
+        }
+        else
+        {
+            break;
+        }
+    }
 
     return traceInfo;
 }
@@ -109,6 +167,7 @@ TraceInfo Trace (Ray ray, int maxBounceCount)
 void TraceRays (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
+    int state = id.y * Resolution.x + id.x + FrameRand;
 
     // Calculate local ray start position
     float rayPosLocalX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
@@ -119,35 +178,33 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     float3 rayPosWorld = ApplyCameraTransform(rayPosLocalOffset) + WorldSpaceCameraPos;
 
     // Calculate ray direction
-    float3 rayDirLocal = normalize(rayPosLocalOffset);
+    float3 rayDirLocal = normalize(float3(rayPosLocalX, rayPosLocalY, 1.0));
     float3 rayDirWorld = normalize(ApplyCameraTransform(rayDirLocal)); // Transform to world space
 
-    // Set ray values
-    Ray startRay;
-    startRay.origin = WorldSpaceCameraPos;
-    startRay.dir = rayDirWorld;
+    // Set initial ray values
+    Ray ray;
+    ray.origin = WorldSpaceCameraPos;
+    ray.dir = rayDirWorld;
 
     // Trace the ray through the scene
-    for (int i = 0; i < SpheresNum; i++)
+    TraceInfo combinedTraceInfo;
+    for (int i = 0; i < RaysPerPixel; i++)
     {
-        // first ray collision
-        HitInfo hitInfo = CircleRayIntersect(startRay, Spheres[i]);
-        if (hitInfo.didHit)
-        {
-            // Only render ray hits in front of the camera
-            if (0 < dot(startRay.dir, float3(hitInfo.hitPoint - WorldSpaceCameraPos)))
-            {
-                // Trace ray further through the scene
-                Ray secondRay;
-                secondRay = startRay;
-                TraceInfo traceInfo = Trace(secondRay, MaxBounceCount - 1);
+        TraceInfo traceInfo = Trace(ray, state);
 
-                Result[id.xy] = float4(traceInfo.rgbVal.x, traceInfo.rgbVal.y, traceInfo.rgbVal.z, 0);
-                return;
-            }
-        }
+        combinedTraceInfo.rayColor += traceInfo.rayColor;
+        combinedTraceInfo.incomingLight += traceInfo.incomingLight;
     }
+    combinedTraceInfo.rayColor /= float(RaysPerPixel);
+    combinedTraceInfo.incomingLight /= float(RaysPerPixel);
 
-    // Return default background color (no ray hit in front of camera)
-    Result[id.xy] = float4(0, 0, 0, 0);
+    // Combine prev frame with current frame. Weight the contributions to result in an average over all frames.
+    float3 col = combinedTraceInfo.incomingLight;
+    float3 colPrev = float3(Result[id.xy].x, Result[id.xy].y, Result[id.xy].z);
+
+    float weight = 1.0 / (FrameCount + 1);
+
+    float3 accumulatedCol = saturate(colPrev * (1 - weight) + col * weight);
+
+    Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
 }

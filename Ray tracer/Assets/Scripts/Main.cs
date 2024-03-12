@@ -9,10 +9,13 @@ public class Main : MonoBehaviour
     public int2 Resolution;
 
     [Header("RT settings")]
-    [Range(1, 10)] public int MaxBounceCount;
+    public int MaxBounceCount;
+    public int RaysPerPixel;
+    public int FrameCount = 0;
 
-    [Header("Scene objects")]
+    [Header("Scene objects / materials")]
     public float4[] SpheresInput; // xyz: pos; w: radii
+    public float4[] MatTypesInput; // xyz: emissionColor; w: emissionStrength
 
     [Header("References")]
     public ComputeShader rayTracerShader;
@@ -21,23 +24,33 @@ public class Main : MonoBehaviour
     private RenderTexture renderTexture;
     private int RayTracerThreadSize = 32; // /32
     private Sphere[] Spheres;
+    private MaterialType[] MaterialTypes;
     private ComputeBuffer SphereBuffer;
+    private ComputeBuffer MaterialTypesBuffer;
+
     private bool ProgramStarted = false;
 
     public struct Sphere
     {
         public float3 position;
         public float radius;
+        public int materialTypeFlag;
+    };
+    struct MaterialType
+    {
+        public float3 color;
+        public float brightness;
     };
 
     void Start()
     {
-        Spheres = new Sphere[SpheresInput.Length];
-        SphereBuffer = new ComputeBuffer(Spheres.Length, sizeof(float) * 4);
+        SphereBuffer = new ComputeBuffer(SpheresInput.Length, sizeof(float) * 4 + sizeof(int) * 1);
+        MaterialTypesBuffer = new ComputeBuffer(MatTypesInput.Length, sizeof(float) * 4 + sizeof(int) * 0);
 
-        UpdateSphereData();
+        UpdateSetData();
 
         rayTracerShader.SetBuffer(0, "Spheres", SphereBuffer);
+        rayTracerShader.SetBuffer(0, "MaterialTypes", MaterialTypesBuffer);
 
         UpdatePerFrame();
         UpdateSettings();
@@ -52,9 +65,13 @@ public class Main : MonoBehaviour
 
     void UpdatePerFrame()
     {
+        // Frame set variables
+        int FrameRand = UnityEngine.Random.Range(0, 999999);
+        rayTracerShader.SetInt("FrameRand", FrameRand);
+        rayTracerShader.SetInt("FrameCount", FrameCount++);
+
         // Camera position
         float3 worldSpaceCameraPos = transform.position;
-        worldSpaceCameraPos.z = -worldSpaceCameraPos.z; // Invert z
         float[] worldSpaceCameraPosArray = new float[] { worldSpaceCameraPos.x, worldSpaceCameraPos.y, worldSpaceCameraPos.z };
         rayTracerShader.SetFloats("WorldSpaceCameraPos", worldSpaceCameraPosArray);
 
@@ -68,20 +85,22 @@ public class Main : MonoBehaviour
     {
         if (ProgramStarted)
         {
+            FrameCount = 0;
             UpdateSettings();
         }
     }
 
     void UpdateSettings()
     {
-        UpdateSphereData();
+        UpdateSetData();
 
         rayTracerShader.SetInt("SpheresNum", Spheres.Length);
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rayTracerShader.SetInts("Resolution", resolutionArray);
 
-        rayTracerShader.SetInts("MaxBounceCount", MaxBounceCount);
+        rayTracerShader.SetInt("MaxBounceCount", MaxBounceCount);
+        rayTracerShader.SetInt("RaysPerPixel", RaysPerPixel);
 
         float aspectRatio = Resolution.x / Resolution.y;
         float fieldOfViewRad = fieldOfView * Mathf.PI / 180;
@@ -91,17 +110,32 @@ public class Main : MonoBehaviour
         rayTracerShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
     }
 
-    void UpdateSphereData()
+    void UpdateSetData()
     {
+        // Set spheres data
+        Spheres = new Sphere[SpheresInput.Length];
         for (int i = 0; i < Spheres.Length; i++)
         {
             Spheres[i] = new Sphere
             {
                 position = new float3(SpheresInput[i].x, SpheresInput[i].y, SpheresInput[i].z),
-                radius = SpheresInput[i].w
+                radius = SpheresInput[i].w,
+                materialTypeFlag = i == 0 ? 1 : 0
             };
         }
         SphereBuffer.SetData(Spheres);
+
+        // Set material types data
+        MaterialTypes = new MaterialType[MatTypesInput.Length];
+        for (int i = 0; i < MaterialTypes.Length; i++)
+        {
+            MaterialTypes[i] = new MaterialType
+            {
+                color = new float3(MatTypesInput[i].x, MatTypesInput[i].y, MatTypesInput[i].z),
+                brightness = MatTypesInput[i].w
+            };
+        }
+        MaterialTypesBuffer.SetData(MaterialTypes);
     }
 
     float[] DegreesToRadians(float[] degreesArray)
@@ -147,5 +181,6 @@ public class Main : MonoBehaviour
     void OnDestroy()
     {
         SphereBuffer?.Release();
+        MaterialTypesBuffer?.Release();
     }
 }

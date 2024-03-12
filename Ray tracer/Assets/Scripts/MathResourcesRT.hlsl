@@ -5,22 +5,28 @@ float sqr(float a)
 	return a * a;
 }
 
-float randNormalized(float n)
+uint NextRandom(inout uint state)
 {
-    return frac(sin(n) * 43758.5453);
+    state = state * 747796405 + 2891336453;
+    uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
+    result = (result >> 22) ^ result;
+    return result;
+}
+
+float randNormalized(inout uint state)
+{
+    return NextRandom(state) / 4294967295.0; // 2^32 - 1
 }
 
 float randValueNormalDistribution(inout uint state)
 {
-    // Thanks to https://stackoverflow.com/a/6178290
     float theta = 2 * PI * randNormalized(state);
     float rho = sqrt(-2 * log(randNormalized(state)));
     return rho * cos(theta);
 }
 
-float3 randPointOnUnitCircle(inout uint state)
+float3 randPointOnUnitSphere(inout uint state)
 {
-    // Thanks to https://math.stackexchange.com/a/1585996
     float x = randValueNormalDistribution(state);
     float y = randValueNormalDistribution(state);
     float z = randValueNormalDistribution(state);
