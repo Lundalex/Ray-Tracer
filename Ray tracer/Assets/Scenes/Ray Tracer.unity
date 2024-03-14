@@ -134,6 +134,7 @@ GameObject:
   - component: {fileID: 1356186228}
   - component: {fileID: 1356186229}
   - component: {fileID: 1356186227}
+  - component: {fileID: 1356186230}
   - component: {fileID: 1356186226}
   m_Layer: 0
   m_Name: Main Camera
@@ -234,11 +235,12 @@ MonoBehaviour:
     y: 1080
   MaxBounceCount: 3
   RaysPerPixel: 10
+  ScatterProbability: 0
   FrameCount: 0
   SpheresInput:
   - x: 10
     y: -1.02
-    z: 5
+    z: -2
     w: 1.06
   - x: -19.39
     y: -1.02
@@ -268,16 +270,39 @@ MonoBehaviour:
     y: -6.11
     z: -3.52
     w: 0.72
-  MatTypesInput:
-  - x: 1
-    y: 1
-    z: 0
-    w: 0.05
+  MatTypesInput1:
   - x: 1
     y: 1
     z: 1
+    w: 0.05
+  - x: 1
+    y: 1
+    z: 0
     w: 25
-  rayTracerShader: {fileID: 7200000, guid: 96721caf6d7a30541a45491bb6102c23, type: 3}
+  MatTypesInput2:
+  - x: 0
+    y: 0
+    z: 0
+    w: 0
+  - x: 0
+    y: 0
+    z: 0
+    w: 0
+  rtShader: {fileID: 7200000, guid: 96721caf6d7a30541a45491bb6102c23, type: 3}
+  shaderHelper: {fileID: 1356186230}
+--- !u!114 &1356186230
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1356186225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a045914656618a4d8e6e344f965fedf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m: {fileID: 1356186229}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

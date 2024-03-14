@@ -1,6 +1,9 @@
 using UnityEngine;
 using Unity.Mathematics;
-using System;
+
+// Import utils from Resources.cs
+using Resources;
+// Usage: Utils.(functionName)()
 
 public class Main : MonoBehaviour
 {
@@ -11,46 +14,36 @@ public class Main : MonoBehaviour
     [Header("RT settings")]
     public int MaxBounceCount;
     public int RaysPerPixel;
+    public float ScatterProbability;
     public int FrameCount = 0;
 
     [Header("Scene objects / materials")]
     public float4[] SpheresInput; // xyz: pos; w: radii
-    public float4[] MatTypesInput; // xyz: emissionColor; w: emissionStrength
+    public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
+    public float4[] MatTypesInput2; // x: smoothness
 
     [Header("References")]
-    public ComputeShader rayTracerShader;
+    public ComputeShader rtShader;
+    public ShaderHelper shaderHelper;
 
     // Private variables
     private RenderTexture renderTexture;
     private int RayTracerThreadSize = 32; // /32
     private Sphere[] Spheres;
     private MaterialType[] MaterialTypes;
-    private ComputeBuffer SphereBuffer;
-    private ComputeBuffer MaterialTypesBuffer;
+    public ComputeBuffer SphereBuffer;
+    public ComputeBuffer MaterialTypesBuffer;
 
     private bool ProgramStarted = false;
-
-    public struct Sphere
-    {
-        public float3 position;
-        public float radius;
-        public int materialTypeFlag;
-    };
-    struct MaterialType
-    {
-        public float3 color;
-        public float brightness;
-    };
 
     void Start()
     {
         SphereBuffer = new ComputeBuffer(SpheresInput.Length, sizeof(float) * 4 + sizeof(int) * 1);
-        MaterialTypesBuffer = new ComputeBuffer(MatTypesInput.Length, sizeof(float) * 4 + sizeof(int) * 0);
+        MaterialTypesBuffer = new ComputeBuffer(MatTypesInput1.Length, sizeof(float) * 5 + sizeof(int) * 0);
 
         UpdateSetData();
 
-        rayTracerShader.SetBuffer(0, "Spheres", SphereBuffer);
-        rayTracerShader.SetBuffer(0, "MaterialTypes", MaterialTypesBuffer);
+        shaderHelper.SetRTShaderBuffers(rtShader);
 
         UpdatePerFrame();
         UpdateSettings();
@@ -67,18 +60,18 @@ public class Main : MonoBehaviour
     {
         // Frame set variables
         int FrameRand = UnityEngine.Random.Range(0, 999999);
-        rayTracerShader.SetInt("FrameRand", FrameRand);
-        rayTracerShader.SetInt("FrameCount", FrameCount++);
+        rtShader.SetInt("FrameRand", FrameRand);
+        rtShader.SetInt("FrameCount", FrameCount++);
 
         // Camera position
         float3 worldSpaceCameraPos = transform.position;
         float[] worldSpaceCameraPosArray = new float[] { worldSpaceCameraPos.x, worldSpaceCameraPos.y, worldSpaceCameraPos.z };
-        rayTracerShader.SetFloats("WorldSpaceCameraPos", worldSpaceCameraPosArray);
+        rtShader.SetFloats("WorldSpaceCameraPos", worldSpaceCameraPosArray);
 
         // Camera orientation
         float3 cameraRot = transform.rotation.eulerAngles;
         float[] cameraRotArray = new float[] { cameraRot.x, cameraRot.y, cameraRot.z };
-        rayTracerShader.SetFloats("CameraRotation", DegreesToRadians(cameraRotArray));
+        rtShader.SetFloats("CameraRotation", Func.DegreesToRadians(cameraRotArray));
     }
 
     private void OnValidate()
@@ -94,20 +87,23 @@ public class Main : MonoBehaviour
     {
         UpdateSetData();
 
-        rayTracerShader.SetInt("SpheresNum", Spheres.Length);
+        shaderHelper.UpdateRTShaderVariables(rtShader);
+
+        rtShader.SetInt("SpheresNum", Spheres.Length);
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
-        rayTracerShader.SetInts("Resolution", resolutionArray);
+        rtShader.SetInts("Resolution", resolutionArray);
 
-        rayTracerShader.SetInt("MaxBounceCount", MaxBounceCount);
-        rayTracerShader.SetInt("RaysPerPixel", RaysPerPixel);
+        rtShader.SetInt("MaxBounceCount", MaxBounceCount);
+        rtShader.SetInt("RaysPerPixel", RaysPerPixel);
+        rtShader.SetFloat("ScatterProbability", ScatterProbability);
 
         float aspectRatio = Resolution.x / Resolution.y;
         float fieldOfViewRad = fieldOfView * Mathf.PI / 180;
         float viewSpaceHeight = Mathf.Tan(fieldOfViewRad * 0.5f);
         float viewSpaceWidth = aspectRatio * viewSpaceHeight;
-        rayTracerShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
-        rayTracerShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
+        rtShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
+        rtShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
     }
 
     void UpdateSetData()
@@ -126,33 +122,17 @@ public class Main : MonoBehaviour
         SphereBuffer.SetData(Spheres);
 
         // Set material types data
-        MaterialTypes = new MaterialType[MatTypesInput.Length];
+        MaterialTypes = new MaterialType[MatTypesInput1.Length];
         for (int i = 0; i < MaterialTypes.Length; i++)
         {
             MaterialTypes[i] = new MaterialType
             {
-                color = new float3(MatTypesInput[i].x, MatTypesInput[i].y, MatTypesInput[i].z),
-                brightness = MatTypesInput[i].w
+                color = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
+                brightness = MatTypesInput1[i].w,
+                smoothness = MatTypesInput2[i].x
             };
         }
         MaterialTypesBuffer.SetData(MaterialTypes);
-    }
-
-    float[] DegreesToRadians(float[] degreesArray)
-    {
-        float[] radiansArray = new float[degreesArray.Length];
-        for (int i = 0; i < degreesArray.Length; i++)
-        {
-            radiansArray[i] = degreesArray[i] * Mathf.Deg2Rad;
-        }
-        return radiansArray;
-    }
-
-    int2 GetThreadGroupsNumsXY(int2 threadsNum, int threadSize)
-    {
-        int threadGroupsNumX = (int)Math.Ceiling((float)threadsNum.x / threadSize);
-        int threadGroupsNumY = (int)Math.Ceiling((float)threadsNum.y / threadSize);
-        return new(threadGroupsNumX, threadGroupsNumY);
     }
 
     void RunRenderShader()
@@ -166,9 +146,9 @@ public class Main : MonoBehaviour
             renderTexture.Create();
         }
 
-        rayTracerShader.SetTexture(0, "Result", renderTexture);
-        int2 threadGroupNums = GetThreadGroupsNumsXY(Resolution, RayTracerThreadSize);
-        rayTracerShader.Dispatch(0, threadGroupNums.x, threadGroupNums.y, 1);
+        rtShader.SetTexture(0, "Result", renderTexture);
+        int2 threadGroupNums = Utils.GetThreadGroupsNumsXY(Resolution, RayTracerThreadSize);
+        rtShader.Dispatch(0, threadGroupNums.x, threadGroupNums.y, 1);
     }
 
     public void OnRenderImage(RenderTexture src, RenderTexture dest)

@@ -4,9 +4,11 @@
 
 static const int ThreadsNum = 32;
 
+static const float FLT_MAX = 99999999999.0; // supplement for maximum float val
+
 // Constants
 const int SpheresNum;
-static const float FLT_MAX = 99999999999.0; // supplement for maximum float val
+const float ScatterProbability;
 
 // View settings
 const int2 Resolution;
@@ -20,28 +22,26 @@ const float3 WorldSpaceCameraPos;
 const float3 CameraRotation;
 
 // Per frame
-const int FrameRand; // "random" value from 0 to 999999, reset each frame
-const int FrameCount; // Each frame, FrameCount++
+const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
+const int FrameCount; // Each frame: FrameCount++
 
 struct Ray
 {
     float3 origin;
     float3 dir;
 };
-
 struct Sphere
 {
     float3 position;
     float radius;
     int materialTypeFlag;
 };
-
 struct MaterialType
 {
     float3 color;
     float brightness;
+    float smoothness;
 };
-
 struct HitInfo
 {
     bool didHit;
@@ -50,7 +50,6 @@ struct HitInfo
     float3 normal;
     MaterialType materialType;
 };
-
 struct TraceInfo
 {
     float3 rayColor;
@@ -111,14 +110,14 @@ HitInfo GetRayCollision (Ray ray)
             float dst = (-b - sqrt(discriminant)) / (2.0 * a);
             float3 hitPoint = ray.origin + dst * ray.dir;
 
-            // Only render the hit nearest to the camera
+            // Only render the object in front
             // Also only render ray hits in the positive ray direction
             if (dst < hitInfo.dst && 0 <= dst)
             {
                 hitInfo.didHit = true;
                 hitInfo.dst = dst;
                 hitInfo.hitPoint = hitPoint;
-                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position); // tangent always inline with sphere radius dir
+                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position); // tangent is always the same as sphere radius direction
                 hitInfo.materialType = MaterialTypes[sphere.materialTypeFlag];
             }
         }
@@ -130,18 +129,29 @@ HitInfo GetRayCollision (Ray ray)
 TraceInfo Trace (Ray ray, inout int state)
 {
     TraceInfo traceInfo;
-    traceInfo.rayColor = float3(1, 1, 1); // Default background rgb color is (0, 0, 0)
-    traceInfo.incomingLight = float3(0, 0, 0);
+    traceInfo.rayColor = float3(1, 1, 1); // Default is (1, 1, 1)
+    traceInfo.incomingLight = float3(0, 0, 0); // Default incoming light is (0, 0, 0)
 
     for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
     {
         HitInfo hitInfo = GetRayCollision(ray);
+        MaterialType materialType = hitInfo.materialType;
         
         if (hitInfo.didHit)
         {
-            // Set new ray data
+            // Calculate new ray origin
             ray.origin = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
-            ray.dir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+
+            // Calculate new ray direction
+            // isSpecularBounce == False -> ray.dir = diffuseDir
+            // isSpecularBounce == True -> ray.dir = norm(lerp(diffuseDir, specularDir, materialType.smoothness))
+            bool isSpecularBounce = ScatterProbability > randNormalized(state);
+            // Cosine weighted randPointOnUnitSphere. This trivialises any "light spread" calculations
+            float3 diffuseDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+            float3 specularDir = reflect(ray.dir, hitInfo.normal);
+            ray.dir = normalize(lerp(diffuseDir, specularDir, materialType.smoothness * isSpecularBounce));
+
+            // Validate ray direction
             if (dot(hitInfo.normal, ray.dir) < 0)
             {
                 ray.dir = -ray.dir;
