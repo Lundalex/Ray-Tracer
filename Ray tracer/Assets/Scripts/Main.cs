@@ -14,10 +14,12 @@ public class Main : MonoBehaviour
     [Header("RT settings")]
     public int MaxBounceCount;
     public int RaysPerPixel;
-    public float ScatterProbability;
-    public int FrameCount = 0;
+    [Range(0.0f, 1.0f)] public float ScatterProbability;
+    [Range(0.0f, 2.0f)] public float defocusStrength;
+    public float focalPlaneFactor; // focalPlaneFactor must be positive
+    public int FrameCount;
 
-    [Header("Scene objects / materials")]
+    [Header("Scene objects / Material2s")]
     public float4[] SpheresInput; // xyz: pos; w: radii
     public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
     public float4[] MatTypesInput2; // x: smoothness
@@ -28,18 +30,22 @@ public class Main : MonoBehaviour
 
     // Private variables
     private RenderTexture renderTexture;
-    private int RayTracerThreadSize = 32; // /32
+    private int RayTracerThreadSize = 16; // /32
     private Sphere[] Spheres;
-    private MaterialType[] MaterialTypes;
+    private Material2[] Material2s;
     public ComputeBuffer SphereBuffer;
-    public ComputeBuffer MaterialTypesBuffer;
+    public ComputeBuffer MaterialsBuffer;
 
     private bool ProgramStarted = false;
+    private Vector3 lastCameraPosition;
+    private Quaternion lastCameraRotation;
 
     void Start()
     {
+        lastCameraPosition = transform.position;
+
         SphereBuffer = new ComputeBuffer(SpheresInput.Length, sizeof(float) * 4 + sizeof(int) * 1);
-        MaterialTypesBuffer = new ComputeBuffer(MatTypesInput1.Length, sizeof(float) * 5 + sizeof(int) * 0);
+        MaterialsBuffer = new ComputeBuffer(MatTypesInput1.Length, sizeof(float) * 8 + sizeof(int) * 0);
 
         UpdateSetData();
 
@@ -54,6 +60,16 @@ public class Main : MonoBehaviour
     void Update()
     {
         UpdatePerFrame();
+    }
+
+    void LateUpdate()
+    {
+        if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
+        {
+            UpdateSettings();
+            lastCameraPosition = transform.position;
+            lastCameraRotation = transform.rotation;
+        }
     }
 
     void UpdatePerFrame()
@@ -78,13 +94,13 @@ public class Main : MonoBehaviour
     {
         if (ProgramStarted)
         {
-            FrameCount = 0;
             UpdateSettings();
         }
     }
 
     void UpdateSettings()
     {
+        FrameCount = 0;
         UpdateSetData();
 
         shaderHelper.UpdateRTShaderVariables(rtShader);
@@ -104,6 +120,9 @@ public class Main : MonoBehaviour
         float viewSpaceWidth = aspectRatio * viewSpaceHeight;
         rtShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
         rtShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
+
+        rtShader.SetFloat("defocusStrength", defocusStrength);
+        rtShader.SetFloat("focalPlaneFactor", focalPlaneFactor);
     }
 
     void UpdateSetData()
@@ -116,23 +135,24 @@ public class Main : MonoBehaviour
             {
                 position = new float3(SpheresInput[i].x, SpheresInput[i].y, SpheresInput[i].z),
                 radius = SpheresInput[i].w,
-                materialTypeFlag = i == 0 ? 1 : 0
+                materialFlag = i == 0 ? 1 : 0
             };
         }
         SphereBuffer.SetData(Spheres);
 
-        // Set material types data
-        MaterialTypes = new MaterialType[MatTypesInput1.Length];
-        for (int i = 0; i < MaterialTypes.Length; i++)
+        // Set Material2 types data
+        Material2s = new Material2[MatTypesInput1.Length];
+        for (int i = 0; i < Material2s.Length; i++)
         {
-            MaterialTypes[i] = new MaterialType
+            Material2s[i] = new Material2
             {
                 color = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
+                specularColor = new float3(1, 1, 1), // Specular color is currently set to white for all Material2 types
                 brightness = MatTypesInput1[i].w,
                 smoothness = MatTypesInput2[i].x
             };
         }
-        MaterialTypesBuffer.SetData(MaterialTypes);
+        MaterialsBuffer.SetData(Material2s);
     }
 
     void RunRenderShader()
@@ -161,6 +181,6 @@ public class Main : MonoBehaviour
     void OnDestroy()
     {
         SphereBuffer?.Release();
-        MaterialTypesBuffer?.Release();
+        MaterialsBuffer?.Release();
     }
 }

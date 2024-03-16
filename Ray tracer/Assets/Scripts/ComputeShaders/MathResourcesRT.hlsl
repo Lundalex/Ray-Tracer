@@ -32,3 +32,10 @@ float3 randPointOnUnitSphere(inout uint state)
     float z = randValueNormalDistribution(state);
     return normalize(float3(x, y, z));
 }
+
+float2 randPointInCircle(inout uint state)
+{
+    float angle = randNormalized(state) * 2 * PI;
+    float2 pointOnCircle = float2(cos(angle), sin(angle));
+    return pointOnCircle * sqrt(randNormalized(state));
+}

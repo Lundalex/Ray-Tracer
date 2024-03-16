@@ -10,11 +10,12 @@ namespace Resources
     {
         public float3 position;
         public float radius;
-        public int materialTypeFlag;
+        public int materialFlag;
     };
-    struct MaterialType
+    struct Material2
     {
         public float3 color;
+        public float3 specularColor;
         public float brightness;
         public float smoothness;
     };

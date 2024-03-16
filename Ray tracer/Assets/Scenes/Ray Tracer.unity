@@ -234,11 +234,13 @@ MonoBehaviour:
     x: 1920
     y: 1080
   MaxBounceCount: 3
-  RaysPerPixel: 10
-  ScatterProbability: 0
-  FrameCount: 0
+  RaysPerPixel: 50
+  ScatterProbability: 0.5
+  defocusStrength: 0.06
+  focalPlaneFactor: 16.7
+  FrameCount: 593
   SpheresInput:
-  - x: 10
+  - x: 5
     y: -1.02
     z: -2
     w: 1.06
@@ -262,10 +264,10 @@ MonoBehaviour:
     y: -8.28
     z: -28.77
     w: 0.72
-  - x: 2.55
+  - x: -2
     y: -1.02
     z: 1.66
-    w: 0.72
+    w: 2
   - x: -0.69
     y: -6.11
     z: -3.52
@@ -273,14 +275,14 @@ MonoBehaviour:
   MatTypesInput1:
   - x: 1
     y: 1
-    z: 1
+    z: 0
     w: 0.05
   - x: 1
     y: 1
-    z: 0
-    w: 25
+    z: 1
+    w: 18
   MatTypesInput2:
-  - x: 0
+  - x: 0.7
     y: 0
     z: 0
     w: 0

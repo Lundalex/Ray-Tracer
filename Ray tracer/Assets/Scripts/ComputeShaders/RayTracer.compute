@@ -2,7 +2,7 @@
 
 #include "MathResourcesRT.hlsl"
 
-static const int ThreadsNum = 32;
+static const int ThreadsNum = 16;
 
 static const float FLT_MAX = 99999999999.0; // supplement for maximum float val
 
@@ -16,6 +16,8 @@ const int MaxBounceCount;
 const int RaysPerPixel;
 const float viewSpaceWidth;
 const float viewSpaceHeight;
+const float defocusStrength;
+const float focalPlaneFactor;
 
 // Camera orientation
 const float3 WorldSpaceCameraPos;
@@ -34,11 +36,12 @@ struct Sphere
 {
     float3 position;
     float radius;
-    int materialTypeFlag;
+    int materialFlag;
 };
-struct MaterialType
+struct Material2
 {
     float3 color;
+    float3 specularColor;
     float brightness;
     float smoothness;
 };
@@ -48,7 +51,7 @@ struct HitInfo
     float dst;
     float3 hitPoint;
     float3 normal;
-    MaterialType materialType;
+    Material2 material2;
 };
 struct TraceInfo
 {
@@ -56,7 +59,7 @@ struct TraceInfo
     float3 incomingLight;
 };
 
-RWStructuredBuffer<MaterialType> MaterialTypes;
+RWStructuredBuffer<Material2> Materials;
 RWStructuredBuffer<Sphere> Spheres;
 
 RWTexture2D<float4> Result;
@@ -118,7 +121,7 @@ HitInfo GetRayCollision (Ray ray)
                 hitInfo.dst = dst;
                 hitInfo.hitPoint = hitPoint;
                 hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position); // tangent is always the same as sphere radius direction
-                hitInfo.materialType = MaterialTypes[sphere.materialTypeFlag];
+                hitInfo.material2 = Materials[sphere.materialFlag];
             }
         }
     }
@@ -135,7 +138,7 @@ TraceInfo Trace (Ray ray, inout int state)
     for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
     {
         HitInfo hitInfo = GetRayCollision(ray);
-        MaterialType materialType = hitInfo.materialType;
+        Material2 material = hitInfo.material2;
         
         if (hitInfo.didHit)
         {
@@ -143,13 +146,13 @@ TraceInfo Trace (Ray ray, inout int state)
             ray.origin = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
 
             // Calculate new ray direction
-            // isSpecularBounce == False -> ray.dir = diffuseDir
-            // isSpecularBounce == True -> ray.dir = norm(lerp(diffuseDir, specularDir, materialType.smoothness))
-            bool isSpecularBounce = ScatterProbability > randNormalized(state);
-            // Cosine weighted randPointOnUnitSphere. This trivialises any "light spread" calculations
-            float3 diffuseDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+            // isSpecularBounce == False -> ray.dir = scatterDir
+            // isSpecularBounce == True -> ray.dir = norm(lerp(scatterDir, specularDir, material.smoothness))
+            bool isSpecularBounce = ScatterProbability < randNormalized(state);
+            // Cosine weighted randPointOnUnitSphere. This removes the need for any "light spread" calculations
+            float3 scatterDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
             float3 specularDir = reflect(ray.dir, hitInfo.normal);
-            ray.dir = normalize(lerp(diffuseDir, specularDir, materialType.smoothness * isSpecularBounce));
+            ray.dir = normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
 
             // Validate ray direction
             if (dot(hitInfo.normal, ray.dir) < 0)
@@ -158,11 +161,9 @@ TraceInfo Trace (Ray ray, inout int state)
             }
 
             // Calculate new traceInfo values
-            MaterialType material = hitInfo.materialType;
             float3 emittedLight = material.color * material.brightness;
-            float lightStrength = dot(hitInfo.normal, ray.dir);
             traceInfo.incomingLight += emittedLight * traceInfo.rayColor;
-            traceInfo.rayColor *= material.color * lightStrength * 2.0;
+            traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
         }
         else
         {
@@ -179,29 +180,26 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
     int state = id.y * Resolution.x + id.x + FrameRand;
 
-    // Calculate local ray start position
-    float rayPosLocalX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
-    float rayPosLocalY = (float(id.y) / Resolution.y - 0.5) * 2.0 * viewSpaceHeight;
-    float3 rayPosLocalOffset = float3(rayPosLocalX, rayPosLocalY, -1.0); // PlaneOffset must be positive
+    // Calculate focal plane world position for the given pixel
+    float focalPosX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
+    float focalPosY = (float(id.y) / Resolution.y - 0.5) * 2.0 * viewSpaceHeight;
+    float3 focalPos = float3(focalPosX, focalPosY, 1) * focalPlaneFactor;
+    float3 worldFocalPos = ApplyCameraTransform(focalPos) + WorldSpaceCameraPos;
 
-    // Transform ray position from local space to world space
-    float3 rayPosWorld = ApplyCameraTransform(rayPosLocalOffset) + WorldSpaceCameraPos;
-
-    // Calculate ray direction
-    float3 rayDirLocal = normalize(float3(rayPosLocalX, rayPosLocalY, 1.0));
-    float3 rayDirWorld = normalize(ApplyCameraTransform(rayDirLocal)); // Transform to world space
-
-    // Set initial ray values
-    Ray ray;
-    ray.origin = WorldSpaceCameraPos;
-    ray.dir = rayDirWorld;
-
-    // Trace the ray through the scene
+    // Trace ray(s) through the scene
     TraceInfo combinedTraceInfo;
     for (int i = 0; i < RaysPerPixel; i++)
     {
+        // Initial ray setup
+        float3 jitter = ApplyCameraTransform(float3(randPointInCircle(state) * defocusStrength, 0));
+        Ray ray;
+        ray.origin = WorldSpaceCameraPos + jitter * focalPlaneFactor;
+        ray.dir = normalize(worldFocalPos - ray.origin);
+
+        // Trace ray
         TraceInfo traceInfo = Trace(ray, state);
 
+        // Record traceInfo
         combinedTraceInfo.rayColor += traceInfo.rayColor;
         combinedTraceInfo.incomingLight += traceInfo.incomingLight;
     }
@@ -217,4 +215,5 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     float3 accumulatedCol = saturate(colPrev * (1 - weight) + col * weight);
 
     Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
+    // Result[id.xy] = float4(col.x, col.y, col.z, 0);
 }

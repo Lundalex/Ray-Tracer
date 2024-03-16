@@ -6,7 +6,7 @@ public class ShaderHelper : MonoBehaviour
     public void SetRTShaderBuffers(ComputeShader rtShader)
     {
         rtShader.SetBuffer(0, "Spheres", m.SphereBuffer);
-        rtShader.SetBuffer(0, "MaterialTypes", m.MaterialTypesBuffer);
+        rtShader.SetBuffer(0, "Materials", m.MaterialsBuffer);
     }
 
     public void UpdateRTShaderVariables(ComputeShader rtShader)
