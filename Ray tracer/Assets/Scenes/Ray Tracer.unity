@@ -211,7 +211,7 @@ Transform:
   m_GameObject: {fileID: 1356186225}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -15}
+  m_LocalPosition: {x: 0, y: -3.4, z: -8.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -233,45 +233,45 @@ MonoBehaviour:
   Resolution:
     x: 1920
     y: 1080
-  MaxBounceCount: 3
-  RaysPerPixel: 50
-  ScatterProbability: 0.5
-  defocusStrength: 0.06
+  MaxBounceCount: 5
+  RaysPerPixel: 10
+  ScatterProbability: 0.7
+  defocusStrength: 0
   focalPlaneFactor: 16.7
-  FrameCount: 593
+  FrameCount: 0
   SpheresInput:
-  - x: 5
-    y: -1.02
+  - x: -5
+    y: 1
+    z: 4
+    w: 4.5
+  - x: -18
+    y: -1
+    z: -18
+    w: 1
+  - x: 0.5
+    y: -10.9
     z: -2
-    w: 1.06
-  - x: -19.39
-    y: -1.02
-    z: -17.68
-    w: 0.72
-  - x: -3.27
-    y: 1.15
-    z: -2
-    w: 0.72
-  - x: -0.69
-    y: -1.02
-    z: 6.01
-    w: 0.72
-  - x: 2.8
-    y: -5.06
-    z: 22.15
-    w: 0.72
-  - x: -0.69
-    y: -8.28
-    z: -28.77
-    w: 0.72
+    w: 5.2
+  - x: 2.2
+    y: -5
+    z: -4.7
+    w: 0.7
+  - x: 0.5
+    y: -4.5
+    z: -4.5
+    w: 0.7
+  - x: -1
+    y: -8.3
+    z: -29
+    w: 0.7
   - x: -2
-    y: -1.02
-    z: 1.66
-    w: 2
-  - x: -0.69
-    y: -6.11
-    z: -3.52
-    w: 0.72
+    y: -5.4
+    z: -3
+    w: 1
+  - x: -0.7
+    y: -2.8
+    z: -3.5
+    w: 0.7
   MatTypesInput1:
   - x: 1
     y: 1
@@ -280,9 +280,9 @@ MonoBehaviour:
   - x: 1
     y: 1
     z: 1
-    w: 18
+    w: 9
   MatTypesInput2:
-  - x: 0.7
+  - x: 1
     y: 0
     z: 0
     w: 0
