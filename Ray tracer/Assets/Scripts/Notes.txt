@@ -1,6 +1,7 @@
--- Optimisations --
-
-Occlusion culling - Exclude spheres not in view, from being processed by the RT shader
-Spatial partitioning - Traverse through the scene along a grid, only checking collisions with spheres that are "near" each cell (preprocessing step)
-
-0 < dot(ray.dir, float3(hitInfo.hitPoint - ray.origin))
+Next steps:
+1. Calc Tri Data such as normals.
+2. Copy/write shader code for triangle-ray intersections.
+3. Write shader code for box-ray intersections.
+4. Add settings for stylising rendered tri mesh, and bounding boxes.
+5. ability to rotate objects.
+5. BVH

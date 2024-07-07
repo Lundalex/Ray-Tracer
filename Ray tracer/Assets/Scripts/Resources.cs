@@ -6,27 +6,25 @@ using Vector3 = UnityEngine.Vector3;
 
 namespace Resources
 {
-    public struct Sphere
-    {
-        public float3 position;
-        public float radius;
-        public int materialFlag;
-    };
-    struct Material2
-    {
-        public float3 color;
-        public float3 specularColor;
-        public float brightness;
-        public float smoothness;
-    };
     public class Utils
     {
-        public static Vector2 GetMouseWorldPos(int Width, int Height)
+        public static int GetThreadGroupsNum(int threadsNum, int threadSize)
         {
-            Vector3 MousePos = Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x , Input.mousePosition.y , -Camera.main.transform.position.z));
-            Vector2 MouseWorldPos = new(((MousePos.x - Width/2) * 0.55f + Width) / 2, ((MousePos.y - Height/2) * 0.55f + Height) / 2);
-
-            return MouseWorldPos;
+            int threadGroupsNum = (int)Math.Ceiling((float)threadsNum / threadSize);
+            return threadGroupsNum;
+        }
+        public static int2 GetThreadGroupsNum(int2 threadsNum, int threadSize)
+        {
+            int threadGroupsNumX = GetThreadGroupsNum(threadsNum.x, threadSize);
+            int threadGroupsNumY = GetThreadGroupsNum(threadsNum.y, threadSize);
+            return new(threadGroupsNumX, threadGroupsNumY);
+        }
+        public static int3 GetThreadGroupsNum(int3 threadsNum, int threadSize)
+        {
+            int threadGroupsNumX = GetThreadGroupsNum(threadsNum.x, threadSize);
+            int threadGroupsNumY = GetThreadGroupsNum(threadsNum.y, threadSize);
+            int threadGroupsNumZ = GetThreadGroupsNum(threadsNum.z, threadSize);
+            return new(threadGroupsNumX, threadGroupsNumY, threadGroupsNumZ);
         }
 
         public static bool2 GetMousePressed()
@@ -39,22 +37,150 @@ namespace Resources
             return MousePressed;
         }
 
-        public static int GetThreadGroupsNums(int threadsNum, int threadSize)
+        public static Vector2 GetMousePosNormalised()
         {
-            int threadGroupsNum = (int)Math.Ceiling((float)threadsNum / threadSize);
-            return threadGroupsNum;
+            Vector3 mousePos = Input.mousePosition;
+            Vector2 mouseWorldPos = new Vector2(mousePos.x / 3840, mousePos.y / 2160);
+
+            return mouseWorldPos;
         }
 
-        public static int2 GetThreadGroupsNumsXY(int2 threadsNum, int threadSize)
+        public static float CelciusToKelvin(float celciusTemp)
         {
-            int threadGroupsNumX = GetThreadGroupsNums(threadsNum.x, threadSize);
-            int threadGroupsNumY = GetThreadGroupsNums(threadsNum.y, threadSize);
-            return new(threadGroupsNumX, threadGroupsNumY);
+            return 273.15f + celciusTemp;
+        }
+        
+        public static float3 GetParticleSpawnPosition(int pIndex, int maxIndex, int width, int height, int depth)
+        {
+            float posX = Func.RandFloat((float)5+width/4, (float)3*width/4-5);
+            float posY = Func.RandFloat((float)5, (float)height-5);
+            float posZ = Func.RandFloat((float)5, (float)depth-5);
+
+            return new float3(posX, posY, posZ);
+        }
+
+        public static Tri[] TrisFromTri2s(Tri2[] tri2s)
+        {
+            Tri[] tris = new Tri[tri2s.Length];
+            for (int i = 0; i < tri2s.Length; i++)
+            {
+                tris[i] = new Tri
+                {
+                    vA = tri2s[i].vA,
+                    vB = tri2s[i].vB,
+                    vC = tri2s[i].vC,
+                };
+            }
+
+            return tris;
         }
     }
 
     public class Func
     {
+        public static void Log2(ref int a, bool doCeil = false)
+        {
+            double logValue = Math.Log(a, 2);
+            a = doCeil ? (int)Math.Ceiling(logValue) : (int)logValue;
+        }
+        
+        public static int Log2(int a, bool doCeil = false)
+        {
+            double logValue = Math.Log(a, 2);
+            return doCeil ? (int)Math.Ceiling(logValue) : (int)logValue;
+        }
+
+        public static int Pow2(int a)
+        {
+            double powValue = Mathf.Pow(2, a);
+            return (int)powValue;
+        }
+
+        /// <returns>returns a random integer between a min value (INCLUSIVE) and a max value (INCLUSIVE)</returns>
+        public static int RandInt(int min, int max)
+        {
+            return UnityEngine.Random.Range(min, max+1);
+        }
+
+        /// <returns>returns a random float between a min value (INCLUSIVE) and a max value (INCLUSIVE)</returns>
+        public static float RandFloat(float min, float max)
+        {
+            return UnityEngine.Random.Range(min, max+1);
+        }
+
+        public static int NextPow2(int a)
+        {
+            int nextPow2 = 1;
+            while (nextPow2 < a)
+            {
+                nextPow2 *= 2;
+            }
+            return nextPow2;
+        }
+
+        public static void NextPow2(ref int a)
+        {
+            int nextPow2 = 1;
+            while (nextPow2 < a)
+            {
+                nextPow2 *= 2;
+            }
+            a = nextPow2;
+        }
+
+        /// <summary>Calculates the logarithm (base 2) of the next power of 2</summary>
+        public static int NextLog2(int a)
+        {
+            return Log2(NextPow2(a));
+        }
+
+        /// <summary>Calculates the logarithm (base 2) of the next power of 2</summary>
+        public static void NextLog2(ref int a)
+        {
+            a = Log2(NextPow2(a));
+        }
+
+        /// <summary>Calculates the next integer divisible by a divisor</summary>
+        public static void NextDivisible(ref int a, int divisor)
+        {
+            a = Mathf.CeilToInt(a / divisor) * divisor;
+        }
+        /// <summary>Calculates the next integer divisible by a divisor</summary>
+        public static int NextDivisible(int a, int divisor)
+        {
+            return Mathf.CeilToInt(a / divisor) * divisor;
+        }
+
+        /// <summary>Calculates the uv coord for a point projected onto a triangle, with respect to the scale</summary>
+        public static Vector2 TriUV(Vector3 a, Vector3 b, Vector3 c, Vector3 p, float scale)
+        {
+            // Calculate barycentric coordinates of point p with respect to triangle ABC
+            Vector3 v0 = b - a;
+            Vector3 v1 = c - a;
+            Vector3 v2 = p - a;
+
+            float dot00 = Vector3.Dot(v0, v0);
+            float dot01 = Vector3.Dot(v0, v1);
+            float dot02 = Vector3.Dot(v0, v2);
+            float dot11 = Vector3.Dot(v1, v1);
+            float dot12 = Vector3.Dot(v1, v2);
+
+            float invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+            float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+            float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+            float w = 1 - u - v;
+
+            Vector2 uvA = new Vector2(0, 0); // UV coordinates for vertex a
+            Vector2 uvB = new Vector2(1, 0); // UV coordinates for vertex b
+            Vector2 uvC = new Vector2(0, 1); // UV coordinates for vertex c
+
+            Vector2 uv = (u * uvA + v * uvB + w * uvC) * scale;
+            uv.x = uv.x % 1.0f;
+            uv.y = uv.y % 1.0f;
+
+            return uv;
+        }
+
         public static float[] DegreesToRadians(float[] degreesArray)
         {
             float[] radiansArray = new float[degreesArray.Length];
@@ -63,6 +189,28 @@ namespace Resources
                 radiansArray[i] = degreesArray[i] * Mathf.Deg2Rad;
             }
             return radiansArray;
+        }
+
+        public static int MaxInt(params int[] inputArray)
+        {
+            int maxVal = inputArray[0];
+            for (int i = 1; i < inputArray.Length; i++)
+            {
+                maxVal = Mathf.Max(maxVal, inputArray[i]);
+            }
+
+            return maxVal;
+        }
+
+        public static void SetToMaxInt(ref int input, params int[] inputArray)
+        {
+            int maxVal = inputArray[0];
+            for (int i = 1; i < inputArray.Length; i++)
+            {
+                maxVal = Mathf.Max(maxVal, inputArray[i]);
+            }
+
+            input = maxVal;
         }
     }
 }

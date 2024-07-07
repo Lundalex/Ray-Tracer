@@ -15,7 +15,7 @@ public class Main : MonoBehaviour
     public int MaxBounceCount;
     public int RaysPerPixel;
     [Range(0.0f, 1.0f)] public float ScatterProbability;
-    [Range(0.0f, 2.0f)] public float defocusStrength;
+    [Range(0.0f, 2.0f)] public float DefocusStrength;
     public float focalPlaneFactor; // focalPlaneFactor must be positive
     public int FrameCount;
 
@@ -27,29 +27,29 @@ public class Main : MonoBehaviour
     [Header("References")]
     public ComputeShader rtShader;
     public ShaderHelper shaderHelper;
+    public MeshHelper meshHelper;
 
     // Private variables
     private RenderTexture renderTexture;
     private int RayTracerThreadSize = 16; // /32
     private Sphere[] Spheres;
     private Material2[] Material2s;
-    public ComputeBuffer SphereBuffer;
-    public ComputeBuffer MaterialsBuffer;
+    private Box[] Boxes;
+    private Tri[] Tris;
+    private ComputeBuffer SphereBuffer;
+    private ComputeBuffer BoxBuffer;
+    private ComputeBuffer TriBuffer;
+    private ComputeBuffer MaterialBuffer;
 
     private bool ProgramStarted = false;
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
 
-    void Start()
+    private void Start()
     {
         lastCameraPosition = transform.position;
 
-        SphereBuffer = new ComputeBuffer(SpheresInput.Length, sizeof(float) * 4 + sizeof(int) * 1);
-        MaterialsBuffer = new ComputeBuffer(MatTypesInput1.Length, sizeof(float) * 8 + sizeof(int) * 0);
-
-        UpdateSetData();
-
-        shaderHelper.SetRTShaderBuffers(rtShader);
+        SetData(); // Set data of render object compute buffers
 
         UpdatePerFrame();
         UpdateSettings();
@@ -57,12 +57,12 @@ public class Main : MonoBehaviour
         ProgramStarted = true;
     }
 
-    void Update()
+    private void Update()
     {
         UpdatePerFrame();
     }
 
-    void LateUpdate()
+    private void LateUpdate()
     {
         if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
         {
@@ -72,7 +72,7 @@ public class Main : MonoBehaviour
         }
     }
 
-    void UpdatePerFrame()
+    private void UpdatePerFrame()
     {
         // Frame set variables
         int FrameRand = UnityEngine.Random.Range(0, 999999);
@@ -98,10 +98,10 @@ public class Main : MonoBehaviour
         }
     }
 
-    void UpdateSettings()
+    private void UpdateSettings()
     {
         FrameCount = 0;
-        UpdateSetData();
+        SetData();
 
         shaderHelper.UpdateRTShaderVariables(rtShader);
 
@@ -121,28 +121,31 @@ public class Main : MonoBehaviour
         rtShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
         rtShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
 
-        rtShader.SetFloat("defocusStrength", defocusStrength);
+        rtShader.SetFloat("defocusStrength", DefocusStrength);
         rtShader.SetFloat("focalPlaneFactor", focalPlaneFactor);
     }
 
-    void UpdateSetData()
+    private void SetData()
     {
+        ComputeHelper.Release(AllBuffers());
+
         // Set spheres data
-        Spheres = new Sphere[SpheresInput.Length];
-        for (int i = 0; i < Spheres.Length; i++)
+        Spheres = new Sphere[Func.MaxInt(SpheresInput.Length, 1)];
+        for (int i = 0; i < Spheres.Length && SpheresInput.Length != 0; i++)
         {
             Spheres[i] = new Sphere
             {
-                position = new float3(SpheresInput[i].x, SpheresInput[i].y, SpheresInput[i].z),
+                pos = new float3(SpheresInput[i].x, SpheresInput[i].y, SpheresInput[i].z),
                 radius = SpheresInput[i].w,
-                materialFlag = i == 0 ? 1 : 0
+                materialKey = i == 0 ? 1 : 0
             };
         }
-        SphereBuffer.SetData(Spheres);
+        SphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(Spheres);
+        rtShader.SetBuffer(0, "Spheres", SphereBuffer);
 
         // Set Material2 types data
-        Material2s = new Material2[MatTypesInput1.Length];
-        for (int i = 0; i < Material2s.Length; i++)
+        Material2s = new Material2[Func.MaxInt(MatTypesInput1.Length, 1)];
+        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length; i++)
         {
             Material2s[i] = new Material2
             {
@@ -152,10 +155,19 @@ public class Main : MonoBehaviour
                 smoothness = MatTypesInput2[i].x
             };
         }
-        MaterialsBuffer.SetData(Material2s);
+        MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
+        rtShader.SetBuffer(0, "Materials", MaterialBuffer);
+
+        (Boxes, Tris) = meshHelper.ConstructBVHFromObj(0, 1f);
+
+        TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
+        rtShader.SetBuffer(0, "Tris", TriBuffer);
+
+        BoxBuffer = ComputeHelper.CreateStructuredBuffer<Box>(Boxes);
+        rtShader.SetBuffer(0, "Boxes", BoxBuffer);
     }
 
-    void RunRenderShader()
+    private void RunRenderShader()
     {
         if (renderTexture == null)
         {
@@ -167,20 +179,21 @@ public class Main : MonoBehaviour
         }
 
         rtShader.SetTexture(0, "Result", renderTexture);
-        int2 threadGroupNums = Utils.GetThreadGroupsNumsXY(Resolution, RayTracerThreadSize);
+        int2 threadGroupNums = Utils.GetThreadGroupsNum(Resolution, RayTracerThreadSize);
         rtShader.Dispatch(0, threadGroupNums.x, threadGroupNums.y, 1);
     }
 
-    public void OnRenderImage(RenderTexture src, RenderTexture dest)
+    private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
         RunRenderShader();
 
         Graphics.Blit(renderTexture, dest);
     }
 
-    void OnDestroy()
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BoxBuffer, TriBuffer, MaterialBuffer };
+
+    private void OnDestroy()
     {
-        SphereBuffer?.Release();
-        MaterialsBuffer?.Release();
+        ComputeHelper.Release(AllBuffers());
     }
 }

@@ -34,9 +34,21 @@ struct Ray
 };
 struct Sphere
 {
-    float3 position;
+    float3 pos;
     float radius;
-    int materialFlag;
+    int materialKey;
+};
+struct Box
+{
+    float3 cornerA;
+    float3 cornerB;
+    int materialKey;
+};
+struct Tri2
+{
+    float3 vA;
+    float3 vB;
+    float3 vC;
 };
 struct Material2
 {
@@ -61,6 +73,8 @@ struct TraceInfo
 
 RWStructuredBuffer<Material2> Materials;
 RWStructuredBuffer<Sphere> Spheres;
+RWStructuredBuffer<Box> Boxes;
+RWStructuredBuffer<Tri2> Tris;
 
 RWTexture2D<float4> Result;
 
@@ -101,7 +115,7 @@ HitInfo GetRayCollision (Ray ray)
         Sphere sphere = Spheres[i];
         // From the equation: sqrLength(rayOrigin + rayDir * dst) = radius^2
         // Solving for dst results in a quadratic equation with coefficients:
-        float3 oc = ray.origin - sphere.position;
+        float3 oc = ray.origin - sphere.pos;
         float a = dot(ray.dir, ray.dir);
         float b = 2.0 * dot(oc, ray.dir);
         float c = dot(oc, oc) - sqr(sphere.radius);
@@ -120,8 +134,8 @@ HitInfo GetRayCollision (Ray ray)
                 hitInfo.didHit = true;
                 hitInfo.dst = dst;
                 hitInfo.hitPoint = hitPoint;
-                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.position); // tangent is always the same as sphere radius direction
-                hitInfo.material2 = Materials[sphere.materialFlag];
+                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.pos); // tangent is always the same as sphere radius direction
+                hitInfo.material2 = Materials[sphere.materialKey];
             }
         }
     }
@@ -180,7 +194,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
     int state = id.y * Resolution.x + id.x + FrameRand;
 
-    // Calculate focal plane world position for the given pixel
+    // Calculate focal plane world pos for the given pixel
     float focalPosX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
     float focalPosY = (float(id.y) / Resolution.y - 0.5) * 2.0 * viewSpaceHeight;
     float3 focalPos = float3(focalPosX, focalPosY, 1) * focalPlaneFactor;
