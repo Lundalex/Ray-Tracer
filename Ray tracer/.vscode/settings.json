@@ -56,5 +56,6 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "Ray tracer.sln"
+    "dotnet.defaultSolution": "Ray tracer.sln",
+    "C_Cpp.errorSquiggles": "enabled"
 }

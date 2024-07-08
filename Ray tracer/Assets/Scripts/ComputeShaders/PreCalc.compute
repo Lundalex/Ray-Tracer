@@ -1,0 +1,28 @@
+#pragma kernel CalcTriNormals // 0
+
+#include "RendererResources.hlsl"
+
+const uint NumTris;
+
+RWStructuredBuffer<Tri> Tris;
+
+float3 GetPlaneNormal (float3 a, float3 b, float3 c)
+{
+    float3 ab = b - a;
+    float3 ac = c - a;
+
+    return normalize(cross(ab, ac));
+}
+
+[numthreads(TN_PC,1,1)]
+void CalcTriNormals (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= NumTris) return;
+
+    Tri tri = Tris[i];
+
+    tri.normal = GetPlaneNormal(tri.vA, tri.vB, tri.vC);
+
+    Tris[i] = tri;
+}

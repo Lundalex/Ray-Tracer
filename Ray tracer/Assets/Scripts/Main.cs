@@ -26,16 +26,18 @@ public class Main : MonoBehaviour
 
     [Header("References")]
     public ComputeShader rtShader;
+    public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
 
     // Private variables
     private RenderTexture renderTexture;
     private int RayTracerThreadSize = 16; // /32
-    private Sphere[] Spheres;
-    private Material2[] Material2s;
-    private Box[] Boxes;
-    private Tri[] Tris;
+    private int PreCalcThreadSize = 16; // /32
+    public Sphere[] Spheres;
+    public Material2[] Material2s;
+    public Box[] Boxes;
+    public Tri[] Tris;
     private ComputeBuffer SphereBuffer;
     private ComputeBuffer BoxBuffer;
     private ComputeBuffer TriBuffer;
@@ -103,10 +105,6 @@ public class Main : MonoBehaviour
         FrameCount = 0;
         SetData();
 
-        shaderHelper.UpdateRTShaderVariables(rtShader);
-
-        rtShader.SetInt("SpheresNum", Spheres.Length);
-
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
 
@@ -141,9 +139,9 @@ public class Main : MonoBehaviour
             };
         }
         SphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(Spheres);
-        rtShader.SetBuffer(0, "Spheres", SphereBuffer);
+        shaderHelper.SetSphereBuffer(SphereBuffer);
 
-        // Set Material2 types data
+        // Set Material2s data
         Material2s = new Material2[Func.MaxInt(MatTypesInput1.Length, 1)];
         for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length; i++)
         {
@@ -156,15 +154,23 @@ public class Main : MonoBehaviour
             };
         }
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
-        rtShader.SetBuffer(0, "Materials", MaterialBuffer);
+        shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
+        // Construct BVH(s)
         (Boxes, Tris) = meshHelper.ConstructBVHFromObj(0, 1f);
 
+        // Set Tris data
         TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
-        rtShader.SetBuffer(0, "Tris", TriBuffer);
+        shaderHelper.SetTriBuffer(TriBuffer);
 
+        // Set Boxes data
         BoxBuffer = ComputeHelper.CreateStructuredBuffer<Box>(Boxes);
-        rtShader.SetBuffer(0, "Boxes", BoxBuffer);
+        shaderHelper.SetBoxBuffer(BoxBuffer);
+    }
+
+    private void RunPreCalcShader()
+    {
+        ComputeHelper.DispatchKernel(pcShader, "CalcTriNormals", Tris.Length, PreCalcThreadSize);
     }
 
     private void RunRenderShader()
@@ -176,15 +182,16 @@ public class Main : MonoBehaviour
                 enableRandomWrite = true
             };
             renderTexture.Create();
+            rtShader.SetTexture(0, "Result", renderTexture);
         }
 
-        rtShader.SetTexture(0, "Result", renderTexture);
-        int2 threadGroupNums = Utils.GetThreadGroupsNum(Resolution, RayTracerThreadSize);
-        rtShader.Dispatch(0, threadGroupNums.x, threadGroupNums.y, 1);
+        ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
     }
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
+        RunPreCalcShader();
+
         RunRenderShader();
 
         Graphics.Blit(renderTexture, dest);
