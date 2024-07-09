@@ -7,6 +7,10 @@ using Resources;
 
 public class Main : MonoBehaviour
 {
+    public float3 TriObjectOffsetTEMP;
+    public bool RenderSpheres;
+    public bool RenderTriObjects;
+    public bool RenderBoxes;
     [Header("Render settings")]
     public float fieldOfView;
     public int2 Resolution;
@@ -36,8 +40,8 @@ public class Main : MonoBehaviour
     private int PreCalcThreadSize = 16; // /32
     public Sphere[] Spheres;
     public Material2[] Material2s;
-    public Box[] Boxes;
     public Tri[] Tris;
+    public Box[] Boxes;
     private ComputeBuffer SphereBuffer;
     private ComputeBuffer BoxBuffer;
     private ComputeBuffer TriBuffer;
@@ -81,15 +85,42 @@ public class Main : MonoBehaviour
         rtShader.SetInt("FrameRand", FrameRand);
         rtShader.SetInt("FrameCount", FrameCount++);
 
+        SetCameraOrientationAndTransform();
+        
+        rtShader.SetVector("TriObjectOffsetTEMP", new Vector3(TriObjectOffsetTEMP.x, TriObjectOffsetTEMP.y, TriObjectOffsetTEMP.z));
+    }
+
+    public void SetCameraOrientationAndTransform()
+    {
         // Camera position
         float3 worldSpaceCameraPos = transform.position;
-        float[] worldSpaceCameraPosArray = new float[] { worldSpaceCameraPos.x, worldSpaceCameraPos.y, worldSpaceCameraPos.z };
-        rtShader.SetFloats("WorldSpaceCameraPos", worldSpaceCameraPosArray);
+        rtShader.SetVector("WorldSpaceCameraPos", new Vector3(worldSpaceCameraPos.x, worldSpaceCameraPos.y, worldSpaceCameraPos.z));
 
         // Camera orientation
-        float3 cameraRot = transform.rotation.eulerAngles;
-        float[] cameraRotArray = new float[] { cameraRot.x, cameraRot.y, cameraRot.z };
-        rtShader.SetFloats("CameraRotation", Func.DegreesToRadians(cameraRotArray));
+        float3 cameraRot = transform.rotation.eulerAngles * Mathf.Deg2Rad;
+
+        float temp = cameraRot.x;
+        cameraRot.x = cameraRot.y;
+        cameraRot.y = -temp;
+        cameraRot.z = -cameraRot.z;
+
+        // Camera transform matrix
+        float cosX = Mathf.Cos(cameraRot.x);
+        float sinX = Mathf.Sin(cameraRot.x);
+        float cosY = Mathf.Cos(cameraRot.y);
+        float sinY = Mathf.Sin(cameraRot.y);
+        float cosZ = Mathf.Cos(cameraRot.z);
+        float sinZ = Mathf.Sin(cameraRot.z);
+        // Combined camera transform
+        // Unity only allows setting 4x4 matrices (will get converted to 3x3 automatically in shader)
+        float4x4 CameraTransform = new float4x4(
+            cosY * cosZ,                             cosY * sinZ,                           -sinY, 0.0f,
+            sinX * sinY * cosZ - cosX * sinZ,   sinX * sinY * sinZ + cosX * cosZ,  sinX * cosY, 0.0f,
+            cosX * sinY * cosZ + sinX * sinZ,   cosX * sinY * sinZ - sinX * cosZ,  cosX * cosY, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f
+        );
+
+        rtShader.SetMatrix("CameraTransform", CameraTransform);
     }
 
     private void OnValidate()
@@ -107,6 +138,8 @@ public class Main : MonoBehaviour
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
+        int[] IterationSettings = new int[] { RenderSpheres ? 1 : 0, RenderTriObjects ? 1 : 0, RenderBoxes ? 1 : 0 };
+        rtShader.SetInts("IterationSettings", IterationSettings);
 
         rtShader.SetInt("MaxBounceCount", MaxBounceCount);
         rtShader.SetInt("RaysPerPixel", RaysPerPixel);
@@ -157,15 +190,15 @@ public class Main : MonoBehaviour
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
         // Construct BVH(s)
-        (Boxes, Tris) = meshHelper.ConstructBVHFromObj(0, 1f);
+        (Boxes, Tris) = meshHelper.ConstructBVHFromObj(0, 20f);
+        
+        // Set Boxes data
+        BoxBuffer = ComputeHelper.CreateStructuredBuffer<Box>(Boxes);
+        shaderHelper.SetBoxBuffer(BoxBuffer);
 
         // Set Tris data
         TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
         shaderHelper.SetTriBuffer(TriBuffer);
-
-        // Set Boxes data
-        BoxBuffer = ComputeHelper.CreateStructuredBuffer<Box>(Boxes);
-        shaderHelper.SetBoxBuffer(BoxBuffer);
     }
 
     private void RunPreCalcShader()
@@ -191,6 +224,8 @@ public class Main : MonoBehaviour
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
         RunPreCalcShader();
+
+        TriBuffer.GetData(Tris);
 
         RunRenderShader();
 

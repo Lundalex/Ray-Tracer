@@ -17,10 +17,12 @@ public class ShaderHelper : MonoBehaviour
         m.rtShader.SetBuffer(0, "Tris", triBuffer);
         m.pcShader.SetBuffer(0, "Tris", triBuffer);
 
-        m.pcShader.SetInt("NumTris", m.Tris.Length);
+        m.pcShader.SetInt("TrisNum", m.Tris.Length);
+        m.rtShader.SetInt("TrisNum", m.Tris.Length);
     }
     public void SetBoxBuffer(ComputeBuffer boxBuffer)
     {
         m.rtShader.SetBuffer(0, "Boxes", boxBuffer);
+        m.rtShader.SetInt("BoxesNum", m.Boxes.Length);
     }
 }

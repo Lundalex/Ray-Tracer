@@ -14,6 +14,12 @@ struct Tri // Triangle
     int materialKey;
     int parentKey;
 };
+struct Box
+{
+    float3 vA;
+    float3 vB;
+    int materialKey;
+};
 struct Tri2 // Triangle (variant)
 {
     float3 vA;
@@ -24,12 +30,6 @@ struct Sphere
 {
     float3 pos;
     float radius;
-    int materialKey;
-};
-struct Box
-{
-    float3 cornerA;
-    float3 cornerB;
     int materialKey;
 };
 struct Material2
@@ -44,7 +44,6 @@ struct Material2
 
 struct Ray
 {
-    float3 origin;
     float3 pos;
     float3 dir;
 };
@@ -54,7 +53,19 @@ struct HitInfo
     float dst;
     float3 hitPoint;
     float3 normal;
-    Material2 material2;
+    int materialKey;
+};
+struct TriangleHitInfo
+{
+    bool didHit;
+    float dst;
+    float3 hitPoint;
+    int triIndex;
+};
+struct BoxHitInfo
+{
+    bool didHit;
+    float dst;
 };
 struct TraceInfo
 {

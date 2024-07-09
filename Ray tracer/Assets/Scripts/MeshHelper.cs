@@ -38,8 +38,20 @@ public class MeshHelper : MonoBehaviour
     public (Box[], Tri[]) ConstructBVHFromObj(int meshIndex, float scale)
     {
         Tri2[] meshTris = LoadOBJ(meshIndex, scale);
-        Box[] BoundingBoxes = new Box[2];
 
-        return (BoundingBoxes, Utils.TrisFromTri2s(meshTris));
+        // --- Construct BVH ---
+
+
+
+
+
+
+
+
+
+
+        Box[] boxes = new Box[2];
+        boxes[0] = new Box { vA = 1, vB = 5, materialKey = 0 };
+        return (boxes, Utils.TrisFromTri2s(meshTris));
     }
 }

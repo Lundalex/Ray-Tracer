@@ -2,7 +2,7 @@
 
 #include "RendererResources.hlsl"
 
-const uint NumTris;
+const uint TrisNum;
 
 RWStructuredBuffer<Tri> Tris;
 
@@ -18,7 +18,7 @@ float3 GetPlaneNormal (float3 a, float3 b, float3 c)
 void CalcTriNormals (uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
-    if (i >= NumTris) return;
+    if (i >= TrisNum) return;
 
     Tri tri = Tris[i];
 

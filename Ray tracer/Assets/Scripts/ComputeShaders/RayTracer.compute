@@ -4,7 +4,12 @@
 
 // Constants
 const int SpheresNum;
+const int TrisNum;
+const int BoxesNum;
 const float ScatterProbability;
+
+// Render object iteration settings
+const int3 IterationSettings;
 
 // View settings
 const int2 Resolution;
@@ -19,52 +24,104 @@ const float focalPlaneFactor;
 const float3 WorldSpaceCameraPos;
 const float3 CameraRotation;
 
+// Camera transform matrix
+const float3x3 CameraTransform;
+
+// Temp
+const float3 TriObjectOffsetTEMP;
+
 // Per frame
 const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
 const int FrameCount; // Each frame: FrameCount++
 
 RWStructuredBuffer<Material2> Materials;
 RWStructuredBuffer<Sphere> Spheres;
+RWStructuredBuffer<Tri> Tris;
 RWStructuredBuffer<Box> Boxes;
-RWStructuredBuffer<Tri2> Tris;
 
 RWTexture2D<float4> Result;
 
-float3 ApplyCameraTransform (float3 point_)
+float3 ApplyCameraTransform(float3 point2)
 {
-    float3x3 rotationX = float3x3(
-        1, 0, 0,
-        0, cos(CameraRotation.x), -sin(CameraRotation.x),
-        0, sin(CameraRotation.x), cos(CameraRotation.x)
-    );
-    float3x3 rotationY = float3x3(
-        cos(CameraRotation.y), 0, sin(CameraRotation.y),
-        0, 1, 0,
-        -sin(CameraRotation.y), 0, cos(CameraRotation.y)
-    );
-    float3x3 rotationZ = float3x3(
-        cos(CameraRotation.z), -sin(CameraRotation.z), 0,
-        sin(CameraRotation.z), cos(CameraRotation.z), 0,
-        0, 0, 1
-    );
-
-    // Apply rotations in the order of Z, X, Y
-    // Applying the rotation matrices in the order of Z, Y, X, results in issues when rotating around the x axis (don't know why)
-    point_ = mul(rotationZ, point_);
-    point_ = mul(rotationX, point_);
-    point_ = mul(rotationY, point_);
-
-    return point_;
+    return mul(CameraTransform, point2);
 }
+
+float TriDstSqr( float3 p, float3 a, float3 b, float3 c )
+{
+  float3 ba = b - a; float3 pa = p - a;
+  float3 cb = c - b; float3 pb = p - b;
+  float3 ac = a - c; float3 pc = p - c;
+  float3 nor = cross( ba, ac );
+
+  return (sign(dot(cross(ba,nor),pa)) +
+         sign(dot(cross(cb,nor),pb)) +
+         sign(dot(cross(ac,nor),pc))<2.0)
+         ?
+         min( min(
+         dot2(ba*clamp(dot(ba,pa)/dot2(ba),0.0,1.0)-pa),
+         dot2(cb*clamp(dot(cb,pb)/dot2(cb),0.0,1.0)-pb) ),
+         dot2(ac*clamp(dot(ac,pc)/dot2(ac),0.0,1.0)-pc) )
+         :
+         dot(nor,pa)*dot(nor,pa)/dot2(nor);
+}
+
+float SphereDst (float3 point2, Sphere sphere)
+{
+    float3 localCentrePos = sphere.pos - point2;
+    float sgnDst = length(localCentrePos) - sphere.radius;
+
+    return sgnDst;
+}
+
+TriangleHitInfo RayTriangleIntersect(Ray ray, Tri tri)
+{
+    float3 edgeAB = tri.vB - tri.vA;
+    float3 edgeAC = tri.vC - tri.vA;
+    float3 normalVector = cross(edgeAB, edgeAC);
+    float3 ao = ray.pos - tri.vA + TriObjectOffsetTEMP;
+    float3 dao = cross(ao, ray.dir);
+
+    float determinant = -dot(ray.dir, normalVector);
+    float invDet = 1 / determinant;
+
+    // Calculate dst to triangle & barycentric coordinates of intersection point
+    float dst = dot(ao, normalVector) * invDet;
+    float u = dot(edgeAC, dao) * invDet;
+    float v = -dot(edgeAB, dao) * invDet;
+    float w = 1 - u - v;
+
+    // Initialize hit info
+    TriangleHitInfo triangleHitInfo;
+    triangleHitInfo.didHit = determinant >= 1E-8 && dst >= 0 && u >= 0 && v >= 0 && w >= 0;
+    triangleHitInfo.hitPoint = ray.pos + ray.dir * dst;
+    triangleHitInfo.dst = dst;
+    return triangleHitInfo;
+}
+
+BoxHitInfo RayBoxIntersect(Ray ray, Box box)
+{
+    float3 tMin = (box.vA + 1E-4 - ray.pos) / ray.dir;
+    float3 tMax = (box.vB - ray.pos) / ray.dir;
+    float3 t1 = min(tMin, tMax);
+    float3 t2 = max(tMin, tMax);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
+
+    BoxHitInfo boxHitInfo;
+    boxHitInfo.didHit = tFar >= tNear && tFar > 0;
+    boxHitInfo.dst = boxHitInfo.didHit ? tNear > 0 ? tNear : 0 : 1.#INF;
+
+    return boxHitInfo;
+};
 
 void IterateSpheres(inout HitInfo hitInfo, Ray ray)
 {
     for (int i = 0; i < SpheresNum; i++)
     {
         Sphere sphere = Spheres[i];
-        // From the equation: sqrLength(rayOrigin + rayDir * dst) = radius^2
+        // From the equation: sqrLength(rayPos + rayDir * dst) = radius^2
         // Solving for dst results in a quadratic equation with coefficients:
-        float3 oc = ray.origin - sphere.pos;
+        float3 oc = ray.pos - sphere.pos;
         float a = dot(ray.dir, ray.dir);
         float b = 2.0 * dot(oc, ray.dir);
         float c = dot(oc, oc) - sqr(sphere.radius);
@@ -74,7 +131,7 @@ void IterateSpheres(inout HitInfo hitInfo, Ray ray)
         if (discriminant > 0)
         {
             float dst = (-b - sqrt(discriminant)) / (2.0 * a);
-            float3 hitPoint = ray.origin + dst * ray.dir;
+            float3 hitPoint = ray.pos + dst * ray.dir;
 
             // Only render the object in front
             // Also only render ray hits in the positive ray direction
@@ -83,8 +140,8 @@ void IterateSpheres(inout HitInfo hitInfo, Ray ray)
                 hitInfo.didHit = true;
                 hitInfo.dst = dst;
                 hitInfo.hitPoint = hitPoint;
-                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.pos); // tangent is always the same as sphere radius direction
-                hitInfo.material2 = Materials[sphere.materialKey];
+                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.pos); // The tangent is always the same as the sphere radius direction
+                hitInfo.materialKey = sphere.materialKey;
             }
         }
     }
@@ -92,23 +149,58 @@ void IterateSpheres(inout HitInfo hitInfo, Ray ray)
 
 void IterateTriObjects(inout HitInfo hitInfo, Ray ray)
 {
+    for (int i = 0; i < TrisNum; i++)
+    {
+        Tri tri = Tris[i];
 
+        TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri);
+        
+        if (triangleHitInfo.didHit)
+        { 
+            if (triangleHitInfo.dst < hitInfo.dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.materialKey = 0;
+                hitInfo.normal = tri.normal;
+            }
+        }
+    }
 }
 
 void IterateBoxes(inout HitInfo hitInfo, Ray ray)
 {
+    for (int i = 0; i < BoxesNum; i++)
+    {
+        Box box = Boxes[i];
 
+        float dst;
+        bool didHit;
+        BoxHitInfo boxHitInfo = RayBoxIntersect(ray, box);
+        
+        if (boxHitInfo.didHit)
+        { 
+            if (boxHitInfo.dst < hitInfo.dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.materialKey = box.materialKey;
+            }
+        }
+    }
 }
 
 HitInfo GetRayCollision (Ray ray)
 {
+    // Initial hitInfo initialization
     HitInfo hitInfo;
+    hitInfo.didHit = false;
     hitInfo.dst = FLT_MAX;
+    hitInfo.hitPoint = 0;
+    hitInfo.normal = 0;
+    hitInfo.materialKey = 0;
 
-    // Comment out to skip rendering of a chosen render object type
-    IterateSpheres(hitInfo, ray);
-    IterateTriObjects(hitInfo, ray);
-    IterateBoxes(hitInfo, ray);
+    if (IterationSettings.x) IterateSpheres(hitInfo, ray);
+    if (IterationSettings.y) IterateTriObjects(hitInfo, ray);
+    if (IterationSettings.z) IterateBoxes(hitInfo, ray);
 
     return hitInfo;
 }
@@ -119,15 +211,17 @@ TraceInfo Trace (Ray ray, inout int state)
     traceInfo.rayColor = float3(1, 1, 1); // Default is (1, 1, 1)
     traceInfo.incomingLight = float3(0, 0, 0); // Default incoming light is (0, 0, 0)
 
+
     for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
     {
         HitInfo hitInfo = GetRayCollision(ray);
-        Material2 material = hitInfo.material2;
         
         if (hitInfo.didHit)
         {
-            // Calculate new ray origin
-            ray.origin = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
+            Material2 material = Materials[hitInfo.materialKey];
+
+            // Calculate new ray pos
+            ray.pos = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
 
             // Calculate new ray direction
             // isSpecularBounce == False -> ray.dir = scatterDir
@@ -177,8 +271,8 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
         // Initial ray setup
         float3 jitter = ApplyCameraTransform(float3(randPointInCircle(state) * defocusStrength, 0));
         Ray ray;
-        ray.origin = WorldSpaceCameraPos + jitter * focalPlaneFactor;
-        ray.dir = normalize(worldFocalPos - ray.origin);
+        ray.pos = WorldSpaceCameraPos + jitter * focalPlaneFactor;
+        ray.dir = normalize(worldFocalPos - ray.pos);
 
         // Trace ray
         TraceInfo traceInfo = Trace(ray, state);
