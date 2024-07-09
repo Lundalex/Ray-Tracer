@@ -235,7 +235,7 @@ MonoBehaviour:
     y: 6
     z: -80
   RenderSpheres: 1
-  RenderTriObjects: 1
+  RenderTriObjects: 0
   RenderBoxes: 1
   fieldOfView: 70
   Resolution:
@@ -305,6 +305,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Meshes:
   - {fileID: -2432090755550338912, guid: ba6ee6616f3402c449bb8102b7323716, type: 3}
+  MaxBVHDepth: 8
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
