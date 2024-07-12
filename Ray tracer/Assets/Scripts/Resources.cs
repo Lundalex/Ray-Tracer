@@ -3,6 +3,8 @@ using Unity.Mathematics;
 using System;
 using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
+using Debug = UnityEngine.Debug;
+using System.Diagnostics;
 
 namespace Resources
 {
@@ -73,6 +75,30 @@ namespace Resources
             }
 
             return tris;
+        }
+
+        public static Matrix4x4 CreateWorldToLocalMatrix(Vector3 position, Vector3 rotation)
+        {
+            // Translation matrix
+            Matrix4x4 translationMatrix = Matrix4x4.Translate(-position);
+
+            // Rotation matrices for each axis
+            Matrix4x4 rotationXMatrix = Matrix4x4.Rotate(Quaternion.Euler(-rotation.x, 0, 0));
+            Matrix4x4 rotationYMatrix = Matrix4x4.Rotate(Quaternion.Euler(0, -rotation.y, 0));
+            Matrix4x4 rotationZMatrix = Matrix4x4.Rotate(Quaternion.Euler(0, 0, -rotation.z));
+
+            // Combine rotations (note: order of multiplication matters)
+            Matrix4x4 rotationMatrix = rotationZMatrix * rotationYMatrix * rotationXMatrix;
+
+            // Combine translation and rotation
+            Matrix4x4 worldToLocalMatrix = translationMatrix * rotationMatrix;
+
+            return worldToLocalMatrix;
+        }
+
+        public static Matrix4x4 GetInverseMatrix(Matrix4x4 matrix)
+        {
+            return matrix.inverse;
         }
     }
 
@@ -211,6 +237,31 @@ namespace Resources
             }
 
             input = maxVal;
+        }
+
+        public static float3 Avg(params float3[] inputArray)
+        {
+            float3 tot = 0;
+            foreach (var input in inputArray)
+            {
+                tot += input;
+            }
+            float3 avg = tot / inputArray.Length;
+
+            return avg;
+        }
+    }
+
+    public class DebugUtils
+    {
+        public static void ChildIndexValidation(int childIndex, int bvCount)
+        {
+            if (childIndex + 1 != bvCount) { Debug.Log("Faulty child index. BVs count: " + bvCount + ". Child index: " + childIndex); }
+        }
+        public static void LogStopWatch(string taskName, ref Stopwatch stopwatch)
+        {
+            stopwatch.Stop();
+            Debug.Log(taskName + $" completed in {stopwatch.ElapsedMilliseconds} ms");
         }
     }
 }

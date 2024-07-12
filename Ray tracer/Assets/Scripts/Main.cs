@@ -7,10 +7,16 @@ using Resources;
 
 public class Main : MonoBehaviour
 {
-    public float3 TriObjectOffsetTEMP;
+    public int OBJLoadIndexTEMP;
+    public bool DoUpdateSettings;
     public bool RenderSpheres;
+    public bool RenderBVs;
     public bool RenderTriObjects;
-    public bool RenderBoxes;
+    public bool BVHEnable;
+    [Header("Debug settings")]
+    public bool DebugViewEnable;
+    public int DebugMaxTriChecks;
+    public int DebugMaxBVChecks;
     [Header("Render settings")]
     public float fieldOfView;
     public int2 Resolution;
@@ -33,18 +39,22 @@ public class Main : MonoBehaviour
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
+    public ObjectSettings objectSettings;
 
     // Private variables
-    private RenderTexture renderTexture;
-    private int RayTracerThreadSize = 16; // /32
+    private RenderTexture rtResultTexture;
+    private RenderTexture debugOverlayTexture;
+    private int RayTracerThreadSize = 8; // /32
     private int PreCalcThreadSize = 16; // /32
     public Sphere[] Spheres;
     public Material2[] Material2s;
     public Tri[] Tris;
-    public Box[] Boxes;
+    public TriObject[] TriObjects;
+    public BoundingVolume[] BVs;
     private ComputeBuffer SphereBuffer;
-    private ComputeBuffer BoxBuffer;
+    private ComputeBuffer BVBuffer;
     private ComputeBuffer TriBuffer;
+    private ComputeBuffer TriObjectBuffer;
     private ComputeBuffer MaterialBuffer;
 
     private bool ProgramStarted = false;
@@ -65,14 +75,19 @@ public class Main : MonoBehaviour
 
     private void Update()
     {
+        // Object settings
+        shaderHelper.SetTestMatrix(objectSettings.GetTestWorldToLocalMatrix(), objectSettings.GetTestWorldToLocalMatrix().inverse);
+
         UpdatePerFrame();
+
+        if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); } // temp.
     }
 
     private void LateUpdate()
     {
         if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
         {
-            UpdateSettings();
+            // UpdateSettings();
             lastCameraPosition = transform.position;
             lastCameraRotation = transform.rotation;
         }
@@ -86,8 +101,6 @@ public class Main : MonoBehaviour
         rtShader.SetInt("FrameCount", FrameCount++);
 
         SetCameraOrientationAndTransform();
-        
-        rtShader.SetVector("TriObjectOffsetTEMP", new Vector3(TriObjectOffsetTEMP.x, TriObjectOffsetTEMP.y, TriObjectOffsetTEMP.z));
     }
 
     public void SetCameraOrientationAndTransform()
@@ -127,7 +140,7 @@ public class Main : MonoBehaviour
     {
         if (ProgramStarted)
         {
-            UpdateSettings();
+            // UpdateSettings();
         }
     }
 
@@ -138,7 +151,7 @@ public class Main : MonoBehaviour
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
-        int[] IterationSettings = new int[] { RenderSpheres ? 1 : 0, RenderTriObjects ? 1 : 0, RenderBoxes ? 1 : 0 };
+        int[] IterationSettings = new int[] { RenderSpheres ? 1 : 0, RenderBVs ? 1 : 0, (RenderTriObjects && BVHEnable) ? 1 : 0, (RenderTriObjects && !BVHEnable) ? 1 : 0 };
         rtShader.SetInts("IterationSettings", IterationSettings);
 
         rtShader.SetInt("MaxBounceCount", MaxBounceCount);
@@ -154,6 +167,13 @@ public class Main : MonoBehaviour
 
         rtShader.SetFloat("defocusStrength", DefocusStrength);
         rtShader.SetFloat("focalPlaneFactor", focalPlaneFactor);
+
+        // Mesh helper
+        rtShader.SetInt("MaxDepthBVH", meshHelper.MaxDepthBVH);
+
+        // Debug overlay
+        int[] DebugDataMaxValues = new int[] { DebugMaxTriChecks, DebugMaxBVChecks };
+        rtShader.SetInts("DebugDataMaxValues", DebugDataMaxValues);
     }
 
     private void SetData()
@@ -189,16 +209,24 @@ public class Main : MonoBehaviour
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
-        // Construct BVH(s)
-        (Boxes, Tris) = meshHelper.ConstructBVHFromObj(0, 20f);
+        // Construct BVHEnable(s)
+        (BVs, Tris) = meshHelper.ConstructBVHFromObj(OBJLoadIndexTEMP, 120f);
         
-        // Set Boxes data
-        BoxBuffer = ComputeHelper.CreateStructuredBuffer<Box>(Boxes);
-        shaderHelper.SetBoxBuffer(BoxBuffer);
+        // Set BVHEnable data
+        BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
+        shaderHelper.SetBVBuffer(BVBuffer);
+        rtShader.SetInt("MaxDepthBVH", meshHelper.MaxDepthBVH);
 
         // Set Tris data
         TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
         shaderHelper.SetTriBuffer(TriBuffer);
+        RunPreCalcShader();
+
+        // Set TriObjects data
+        TriObjects = new TriObject[0]; // temp.
+        TriObjectBuffer = ComputeHelper.CreateStructuredBuffer<TriObject>(TriObjects);
+        shaderHelper.SetTriObjectBuffer(TriObjectBuffer);
+
     }
 
     private void RunPreCalcShader()
@@ -208,14 +236,25 @@ public class Main : MonoBehaviour
 
     private void RunRenderShader()
     {
-        if (renderTexture == null)
+        // Ray tracer result texture
+        if (rtResultTexture == null)
         {
-            renderTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+            rtResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
             {
                 enableRandomWrite = true
             };
-            renderTexture.Create();
-            rtShader.SetTexture(0, "Result", renderTexture);
+            rtResultTexture.Create();
+            rtShader.SetTexture(0, "Result", rtResultTexture);
+        }
+        // Debug overlay texture
+        if (debugOverlayTexture == null)
+        {
+            debugOverlayTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+            {
+                enableRandomWrite = true
+            };
+            debugOverlayTexture.Create();
+            rtShader.SetTexture(0, "DebugOverlay", debugOverlayTexture);
         }
 
         ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
@@ -223,16 +262,12 @@ public class Main : MonoBehaviour
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
-        RunPreCalcShader();
-
-        TriBuffer.GetData(Tris);
-
         RunRenderShader();
 
-        Graphics.Blit(renderTexture, dest);
+        Graphics.Blit(DebugViewEnable ? debugOverlayTexture : rtResultTexture, dest);
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BoxBuffer, TriBuffer, MaterialBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, TriObjectBuffer, MaterialBuffer };
 
     private void OnDestroy()
     {

@@ -20,9 +20,19 @@ public class ShaderHelper : MonoBehaviour
         m.pcShader.SetInt("TrisNum", m.Tris.Length);
         m.rtShader.SetInt("TrisNum", m.Tris.Length);
     }
-    public void SetBoxBuffer(ComputeBuffer boxBuffer)
+    public void SetBVBuffer(ComputeBuffer bvBuffer)
     {
-        m.rtShader.SetBuffer(0, "Boxes", boxBuffer);
-        m.rtShader.SetInt("BoxesNum", m.Boxes.Length);
+        m.rtShader.SetBuffer(0, "BVs", bvBuffer);
+        m.rtShader.SetInt("BVsNum", m.BVs.Length);
+    }
+    public void SetTriObjectBuffer(ComputeBuffer triObjectBuffer)
+    {
+        m.rtShader.SetBuffer(0, "TriObjects", triObjectBuffer);
+        m.rtShader.SetInt("TriObjectsNum", m.TriObjects.Length);
+    }
+    public void SetTestMatrix(Matrix4x4 testWorldToLocalMatrix, Matrix4x4 testLocalToWorldMatrix)
+    {
+        m.rtShader.SetMatrix("TestWorldToLocalMatrix", testWorldToLocalMatrix);
+        m.rtShader.SetMatrix("TestWorldToLocalMatrix", testLocalToWorldMatrix);
     }
 }

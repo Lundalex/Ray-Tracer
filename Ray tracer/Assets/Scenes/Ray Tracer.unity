@@ -137,6 +137,7 @@ GameObject:
   - component: {fileID: 1356186230}
   - component: {fileID: 1356186226}
   - component: {fileID: 1356186227}
+  - component: {fileID: 1356186232}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -212,7 +213,7 @@ Transform:
   m_GameObject: {fileID: 1356186225}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -8, y: -3.4, z: -19.3}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -230,14 +231,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf57d16cf254eb348936bec573a2b16a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  TriObjectOffsetTEMP:
-    x: 0
-    y: 6
-    z: -80
+  OBJLoadIndexTEMP: 1
+  DoUpdateSettings: 0
   RenderSpheres: 1
-  RenderTriObjects: 0
-  RenderBoxes: 1
-  fieldOfView: 70
+  RenderBVs: 0
+  RenderTriObjects: 1
+  BVHEnable: 1
+  DebugViewEnable: 0
+  DebugMaxTriChecks: 100
+  DebugMaxBVChecks: 100
+  fieldOfView: 80
   Resolution:
     x: 1920
     y: 1080
@@ -248,14 +251,10 @@ MonoBehaviour:
   focalPlaneFactor: 16.7
   FrameCount: 0
   SpheresInput:
-  - x: -16
+  - x: -10
     y: 1
-    z: 4
-    w: 5.76
-  - x: -18
-    y: -1
-    z: -18
-    w: 1
+    z: -90
+    w: 7
   MatTypesInput1:
   - x: 0
     y: 1
@@ -278,6 +277,7 @@ MonoBehaviour:
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
   shaderHelper: {fileID: 1356186230}
   meshHelper: {fileID: 1356186231}
+  objectSettings: {fileID: 1356186232}
 --- !u!114 &1356186230
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -305,7 +305,31 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Meshes:
   - {fileID: -2432090755550338912, guid: ba6ee6616f3402c449bb8102b7323716, type: 3}
-  MaxBVHDepth: 8
+  - {fileID: -2432090755550338912, guid: d4fb84c7276de4d3a8c1c800329d5bf8, type: 3}
+  - {fileID: -2432090755550338912, guid: 4898f6131e7f54dcd8bb44bd5fe7dfd6, type: 3}
+  MaxDepthBVH: 12
+  SplitResolution: 5
+  TriMaxPerOBJ: -1
+--- !u!114 &1356186232
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1356186225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0c9d791118bc44ac95f9001f7ac02f8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  testPos:
+    x: 0
+    y: 5
+    z: -100
+  testRot:
+    x: 0
+    y: 270
+    z: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

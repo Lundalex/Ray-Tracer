@@ -2,10 +2,12 @@
 
 struct TriObject
 {
-    float3 pos;
-    float3 rot;
+    int rootIndexBVH;
+    float4x4 worldToLocal;
+    float4x4 localToWorld;
+    int materialKey;
 };
-struct Tri // Triangle
+struct Tri
 {
     float3 vA;
     float3 vB;
@@ -14,17 +16,14 @@ struct Tri // Triangle
     int materialKey;
     int parentKey;
 };
-struct Box
+struct BoundingVolume
 {
-    float3 vA;
-    float3 vB;
-    int materialKey;
-};
-struct Tri2 // Triangle (variant)
-{
-    float3 vA;
-    float3 vB;
-    float3 vC;
+    float3 min;
+    float3 max;
+    int triStart;
+    int totTris;
+    int childIndexA;
+    int childIndexB;
 };
 struct Sphere
 {
@@ -40,7 +39,7 @@ struct Material2
     float smoothness;
 };
 
-// Ray Tracer Structss
+// --- Ray Tracer Structs ---
 
 struct Ray
 {
@@ -62,7 +61,7 @@ struct TriangleHitInfo
     float3 hitPoint;
     int triIndex;
 };
-struct BoxHitInfo
+struct BVHitInfo
 {
     bool didHit;
     float dst;
@@ -71,4 +70,9 @@ struct TraceInfo
 {
     float3 rayColor;
     float3 incomingLight;
+};
+struct DebugData
+{
+    int triChecks;
+    int bvChecks;
 };

@@ -11,3 +11,8 @@ option + 8 = []
 fn + Z = undo
 shift + fn + Z = undo an undo
 shift + fn + 7 = comment out / undo comment out
+option + 7 = |
+170-180 after 5s
+
+TestWorldToLocalMatrix + inverse
+then also the debug view with both BVs and Tris
