@@ -7,7 +7,6 @@ using Resources;
 
 public class Main : MonoBehaviour
 {
-    public int OBJLoadIndexTEMP;
     public bool DoUpdateSettings;
     public bool RenderSpheres;
     public bool RenderBVs;
@@ -49,12 +48,12 @@ public class Main : MonoBehaviour
     public Sphere[] Spheres;
     public Material2[] Material2s;
     public Tri[] Tris;
-    public TriObject[] TriObjects;
+    public SceneObjectData[] SceneObjectDatas;
     public BoundingVolume[] BVs;
     private ComputeBuffer SphereBuffer;
     private ComputeBuffer BVBuffer;
     private ComputeBuffer TriBuffer;
-    private ComputeBuffer TriObjectBuffer;
+    private ComputeBuffer SceneObjectDataBuffer;
     private ComputeBuffer MaterialBuffer;
 
     private bool ProgramStarted = false;
@@ -75,19 +74,17 @@ public class Main : MonoBehaviour
 
     private void Update()
     {
-        // Object settings
-        shaderHelper.SetTestMatrix(objectSettings.GetTestWorldToLocalMatrix(), objectSettings.GetTestWorldToLocalMatrix().inverse);
-
         UpdatePerFrame();
 
-        if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); } // temp.
+        if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
+        UpdateSettings(); // temp.
     }
 
     private void LateUpdate()
     {
         if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
         {
-            // UpdateSettings();
+            UpdateSettings();
             lastCameraPosition = transform.position;
             lastCameraRotation = transform.rotation;
         }
@@ -140,7 +137,7 @@ public class Main : MonoBehaviour
     {
         if (ProgramStarted)
         {
-            // UpdateSettings();
+            UpdateSettings();
         }
     }
 
@@ -210,7 +207,7 @@ public class Main : MonoBehaviour
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
         // Construct BVHEnable(s)
-        (BVs, Tris) = meshHelper.ConstructBVHFromObj(OBJLoadIndexTEMP, 120f);
+        (BVs, Tris, SceneObjectDatas) = meshHelper.CreateSceneObjects();
         
         // Set BVHEnable data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
@@ -222,10 +219,9 @@ public class Main : MonoBehaviour
         shaderHelper.SetTriBuffer(TriBuffer);
         RunPreCalcShader();
 
-        // Set TriObjects data
-        TriObjects = new TriObject[0]; // temp.
-        TriObjectBuffer = ComputeHelper.CreateStructuredBuffer<TriObject>(TriObjects);
-        shaderHelper.SetTriObjectBuffer(TriObjectBuffer);
+        // Set SceneObjects data
+        SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
+        shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
 
     }
 
@@ -267,7 +263,7 @@ public class Main : MonoBehaviour
         Graphics.Blit(DebugViewEnable ? debugOverlayTexture : rtResultTexture, dest);
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, TriObjectBuffer, MaterialBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, MaterialBuffer };
 
     private void OnDestroy()
     {

@@ -1,6 +1,5 @@
 // --- Fixed Constants ---
 
-static const float FLT_MAX = 99999999999.0; // supplement for maximum float val
 static const float PI = 3.1415926;
 
 // --- Renderer ---

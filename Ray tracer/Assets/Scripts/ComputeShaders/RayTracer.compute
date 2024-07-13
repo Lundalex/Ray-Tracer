@@ -6,6 +6,7 @@
 const int SpheresNum;
 const int TrisNum;
 const int BVsNum;
+const int SceneObjectsNum;
 const int MaxDepthBVH;
 const float ScatterProbability;
 
@@ -31,10 +32,6 @@ const float3x3 CameraTransform;
 // Debug
 const int2 DebugDataMaxValues;
 
-// Temp
-const float4x4 TestWorldToLocalMatrix;
-const float4x4 TestLocalToWorldMatrix;
-
 // Per frame
 const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
 const int FrameCount; // Each frame: FrameCount++
@@ -42,8 +39,8 @@ const int FrameCount; // Each frame: FrameCount++
 RWStructuredBuffer<Material2> Materials;
 RWStructuredBuffer<Sphere> Spheres;
 RWStructuredBuffer<Tri> Tris;
-RWStructuredBuffer<TriObject> TriObjects;
 RWStructuredBuffer<BoundingVolume> BVs;
+RWStructuredBuffer<SceneObject> SceneObjects;
 
 RWTexture2D<float4> Result;
 RWTexture2D<float4> DebugOverlay;
@@ -120,6 +117,7 @@ float RayBVIntersect(Ray ray, BoundingVolume bv)
     return dst;
 };
 
+// Iterate functions do not utilize the BVH system, and can thereby be very slow to execute
 void IterateSpheres(inout HitInfo hitInfo, Ray ray)
 {
     for (int i = 0; i < SpheresNum; i++)
@@ -152,12 +150,50 @@ void IterateSpheres(inout HitInfo hitInfo, Ray ray)
         }
     }
 }
-
-void TraverseTrisBVH(inout HitInfo hitInfo, Ray ray, inout DebugData debugData)
+void IterateTris(inout HitInfo hitInfo, Ray ray)
 {
-    int bvStack[MaxDepthBVH_ + 1]; // Optimized stack size is MaxDepthBVH_ + 1
+    for (int i = 0; i < TrisNum; i++)
+    {
+        Tri tri = Tris[i];
+
+        TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri);
+        
+        if (triangleHitInfo.didHit)
+        { 
+            if (triangleHitInfo.dst < hitInfo.dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.dst = triangleHitInfo.dst;
+                hitInfo.materialKey = 0;
+                hitInfo.normal = tri.normal;
+            }
+        }
+    }
+}
+void IterateBVs(inout HitInfo hitInfo, Ray ray)
+{
+    for (int i = 0; i < BVsNum; i++)
+    {
+        BoundingVolume bv = BVs[i];
+
+        if (bv.min.x >= 1.#INF) continue;
+
+        float dst = RayBVIntersect(ray, bv);
+        
+        if (dst < hitInfo.dst)
+        {
+            hitInfo.didHit = true;
+            hitInfo.dst = dst;
+            hitInfo.materialKey = 1; // BVs do not have materials
+        }
+    }
+}
+
+void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, int bvStartIndex)
+{
+    int bvStack[MaxDepthBVH_ + 1];
     int stackPointer = 0;
-    bvStack[stackPointer++] = 0;
+    bvStack[stackPointer++] = bvStartIndex;
 
     while (stackPointer > 0)
     {
@@ -176,15 +212,14 @@ void TraverseTrisBVH(inout HitInfo hitInfo, Ray ray, inout DebugData debugData)
                 {
                     hitInfo.didHit = true;
                     hitInfo.dst = triangleHitInfo.dst;
-                    hitInfo.materialKey = 0; // This might need to be set based on the triangle
                     hitInfo.normal = tri.normal;
                 }
             }
         }
         else
         {
-            float dstA = FLT_MAX;
-            float dstB = FLT_MAX;
+            float dstA = 1.#INF;
+            float dstB = 1.#INF;
 
             // If child nodes exist, get the distances to their respective BVs
             if (bv.childIndexA != -1)
@@ -213,69 +248,48 @@ void TraverseTrisBVH(inout HitInfo hitInfo, Ray ray, inout DebugData debugData)
     }
 }
 
-void IterateTris(inout HitInfo hitInfo, Ray ray)
-{
-    for (int i = 0; i < TrisNum; i++)
-    {
-        Tri tri = Tris[i];
-
-        TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri);
-        
-        if (triangleHitInfo.didHit)
-        { 
-            if (triangleHitInfo.dst < hitInfo.dst)
-            {
-                hitInfo.didHit = true;
-                hitInfo.dst = triangleHitInfo.dst;
-                hitInfo.materialKey = 0;
-                hitInfo.normal = tri.normal;
-            }
-        }
-    }
-}
-
-void IterateBVs(inout HitInfo hitInfo, Ray ray)
-{
-    for (int i = 0; i < BVsNum; i++)
-    {
-        BoundingVolume bv = BVs[i];
-
-        if (bv.min.x >= FLT_MAX) continue;
-
-        float dst = RayBVIntersect(ray, bv);
-        
-        if (dst < hitInfo.dst)
-        {
-            hitInfo.didHit = true;
-            hitInfo.dst = dst;
-            hitInfo.materialKey = 1; // BVs do not have materials
-        }
-    }
-}
-
 HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
 {
     // HitInfo initialization
     HitInfo hitInfo;
     hitInfo.didHit = false;
-    hitInfo.dst = FLT_MAX;
+    hitInfo.dst = 1.#INF;
     hitInfo.hitPoint = 0;
     hitInfo.normal = 0;
     hitInfo.materialKey = 0;
 
-    // NOTE: Local ray should be set for each object individually, so -> create a foreach(Object) loop somewhere.
-    Ray localRay;
-    localRay.pos = mul(TestWorldToLocalMatrix, float4(ray.pos, 1));
-    localRay.dir = mul(TestWorldToLocalMatrix, float4(ray.dir, 0));
-    // localRay.invDir = 1 / localRay.dir;
+    for (int sceneObjectIndex = 0; sceneObjectIndex < SceneObjectsNum; sceneObjectIndex++)
+    {
+        SceneObject sceneObject = SceneObjects[sceneObjectIndex];
 
-    if (IterationSettings.x) IterateSpheres(hitInfo, localRay);
-    if (IterationSettings.y) IterateBVs(hitInfo, localRay); // Wrong way to do it. Use debug data tools
-    if (IterationSettings.z) TraverseTrisBVH(hitInfo, localRay, debugData);
-    if (IterationSettings.w) IterateTris(hitInfo, localRay);
+        Ray localRay;
+        localRay.pos = mul(sceneObject.worldToLocalMatrix, float4(ray.pos, 1));
+        localRay.dir = mul(sceneObject.worldToLocalMatrix, float4(ray.dir, 0));
 
-    // hitInfo.normal = normalize(mul(TestLocalToWorldMatrix, float4(hitInfo.normal, 0)));
-    // hitInfo.hitPoint = worldRay.origin + worldRay.dir * hit.dst;
+        // localRay.invDir = 1 / localRay.dir;
+
+        HitInfo localHitInfo;
+        localHitInfo.didHit = false;
+        localHitInfo.dst = 1.#INF;
+        localHitInfo.hitPoint = 0;
+        localHitInfo.normal = 0;
+        localHitInfo.materialKey = 0;
+
+        if (IterationSettings.z) TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
+
+        if (localHitInfo.dst < hitInfo.dst)
+        {
+            hitInfo.didHit = true;
+            hitInfo.dst = localHitInfo.dst;
+            hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)));
+            hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
+            hitInfo.materialKey = sceneObject.materialKey;
+        }
+    }
+
+    if (IterationSettings.x) IterateSpheres(hitInfo, ray);
+    if (IterationSettings.w) IterateTris(hitInfo, ray);
+    if (IterationSettings.y) IterateBVs(hitInfo, ray);
 
     return hitInfo;
 }
@@ -283,8 +297,8 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
 TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
 {
     TraceInfo traceInfo;
-    traceInfo.rayColor = float3(1, 1, 1); // Default is (1, 1, 1)
-    traceInfo.incomingLight = float3(0, 0, 0); // Default incoming light is (0, 0, 0)
+    traceInfo.rayColor = float3(1, 1, 1);
+    traceInfo.incomingLight = float3(0, 0, 0);
 
     for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
     {
@@ -362,14 +376,14 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
 
     // Combine prev frame with current frame. Weight the contributions to result in an average over all frames.
     float3 col = combinedTraceInfo.incomingLight;
-    float3 colPrev = float3(Result[id.xy].x, Result[id.xy].y, Result[id.xy].z);
+    float3 colPrev = Result[id.xy].xyz;
 
     float weight = 1.0 / (FrameCount + 1);
 
     float3 accumulatedCol = saturate(colPrev * (1 - weight) + col * weight);
 
     Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
+    // Result[id.xy] = float4(col.x, col.y, col.z, 0);
     float2 weightedDebugDataMaxValues = RaysPerPixel * DebugDataMaxValues;
     DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, 0, 0);
-    // Result[id.xy] = float4(col.x, col.y, col.z, 0);
 }

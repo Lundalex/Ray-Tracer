@@ -25,6 +25,14 @@ struct BoundingVolume
     int childIndexA;
     int childIndexB;
 };
+struct SceneObject
+{
+    float4x4 worldToLocalMatrix;
+    float4x4 localToWorldMatrix;
+    int materialKey;
+    int triStartIndex;
+    int bvStartIndex;
+};
 struct Sphere
 {
     float3 pos;

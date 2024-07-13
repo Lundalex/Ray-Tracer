@@ -5,6 +5,7 @@ using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 using Debug = UnityEngine.Debug;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace Resources
 {
@@ -77,7 +78,7 @@ namespace Resources
             return tris;
         }
 
-        public static Matrix4x4 CreateWorldToLocalMatrix(Vector3 position, Vector3 rotation)
+        public static Matrix4x4 CreateWorldToLocalMatrix(Vector3 position, Vector3 rotation, Vector3 scale)
         {
             // Translation matrix
             Matrix4x4 translationMatrix = Matrix4x4.Translate(-position);
@@ -90,15 +91,64 @@ namespace Resources
             // Combine rotations (note: order of multiplication matters)
             Matrix4x4 rotationMatrix = rotationZMatrix * rotationYMatrix * rotationXMatrix;
 
-            // Combine translation and rotation
-            Matrix4x4 worldToLocalMatrix = translationMatrix * rotationMatrix;
+            // Scale matrix
+            Matrix4x4 scaleMatrix = Matrix4x4.Scale(Func.Inverse(scale));
+
+            // Combine scale, rotation, and translation
+            Matrix4x4 worldToLocalMatrix = rotationMatrix * scaleMatrix * translationMatrix;
 
             return worldToLocalMatrix;
         }
 
-        public static Matrix4x4 GetInverseMatrix(Matrix4x4 matrix)
+        public static bool AreMeshesEqual(Mesh meshA, Mesh meshB)
         {
-            return matrix.inverse;
+            // Early exit if vertex count or triangle count differs
+            if (meshA.vertexCount != meshB.vertexCount || meshA.triangles.Length != meshB.triangles.Length)
+            {
+                return false;
+            }
+
+            // Compare vertices
+            if (!AreArraysEqual(meshA.vertices, meshB.vertices))
+            {
+                return false;
+            }
+
+            // Compare triangles
+            if (!AreArraysEqual(meshA.triangles, meshB.triangles))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        // Helper method to compare arrays
+        private static bool AreArraysEqual<T>(T[] arrayA, T[] arrayB)
+        {
+            if (arrayA.Length != arrayB.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < arrayA.Length; i++)
+            {
+                if (!EqualityComparer<T>.Default.Equals(arrayA[i], arrayB[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public static int GetMeshIndex(List<(Mesh mesh, int triStartIndex, int bvStartIndex)> meshArray, Mesh meshToCheck)
+        {
+            for (int i = 0; i < meshArray.Count; i++)
+            {
+                if (AreMeshesEqual(meshArray[i].mesh, meshToCheck)) return i;
+            }
+            return -1;
         }
     }
 
@@ -249,6 +299,15 @@ namespace Resources
             float3 avg = tot / inputArray.Length;
 
             return avg;
+        }
+
+        public static Vector3 Inverse(Vector3 a)
+        {
+            return new Vector3(
+                a.x != 0 ? 1.0f / a.x : 0,
+                a.y != 0 ? 1.0f / a.y : 0,
+                a.z != 0 ? 1.0f / a.z : 0
+            );
         }
     }
 

@@ -2,21 +2,24 @@ using Unity.Mathematics;
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 
 // Import utils from Resources.cs
 using Resources;
-using System.Diagnostics;
 // Usage: Utils.(functionName)()
 
 public class MeshHelper : MonoBehaviour
 {
-    public Mesh[] Meshes;
+    public GameObject[] sceneObjects;
     public int MaxDepthBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
     public int TriMaxPerOBJ;
-    public Tri2[] LoadOBJ(int meshIndex, float scale)
+    private SceneObjectData[] sceneObjectsData;
+    private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
+    private Tri[] loadedTris = new Tri[0];
+    private List<(Mesh mesh, int triStartIndex, int bvStartIndex)> LoadedMeshes = new();
+    public Tri2[] LoadOBJ(Mesh mesh)
     {
-        Mesh mesh = Meshes[meshIndex];
         Vector3[] vertices = mesh.vertices;
         int[] triangles = mesh.triangles;
         int triNum = triangles.Length / 3;
@@ -32,9 +35,9 @@ public class MeshHelper : MonoBehaviour
 
             tris[triCount] = new Tri2
             {
-                vA = vertices[indexA] * scale,
-                vB = vertices[indexB] * scale,
-                vC = vertices[indexC] * scale,
+                vA = vertices[indexA],
+                vB = vertices[indexB],
+                vC = vertices[indexC],
             };
             tris[triCount].min = GetTri2Min(tris[triCount]);
             tris[triCount].max = GetTri2Max(tris[triCount]);
@@ -186,7 +189,7 @@ public class MeshHelper : MonoBehaviour
         return (trisChildA, trisChildB);
     }
 
-    private int RecursivelySplitBV(ref List<BV> BVs, ref Tri2[] tris, int bvParentIndex, BV bvParent, int depth)
+    private int RecursivelySplitBV(ref List<BV> BVs, ref Tri2[] tris, int bvParentIndex, BV bvParent, int depth = 0)
     {
         depth += 1;
         if (depth >= MaxDepthBVH) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
@@ -249,27 +252,79 @@ public class MeshHelper : MonoBehaviour
         return furthestChildIndex;
     }
 
-    // Should also return the bounding volumes list in some way, since that data is needed for the BVH
-    public (BoundingVolume[], Tri[]) ConstructBVHFromObj(int meshIndex, float scale)
+    private (int, int) ConstructBVHFromObj(ref BoundingVolume[] boundingVolumes, ref Tri[] tris, Mesh mesh)
     {
-        Tri2[] tris = LoadOBJ(meshIndex, scale);
+        Tri2[] newTris = LoadOBJ(mesh);
 
-        float3 min = GetTri2Min(tris);
-        float3 max = GetTri2Max(tris);
-        List<BV> BVs = new List<BV>
+        float3 min = GetTri2Min(newTris);
+        float3 max = GetTri2Max(newTris);
+        List<BV> newBVs = new List<BV>
         {
             // First BV
-            new BV(min, max, 0, tris.Length, 1, 2)
+            new BV(min, max, 0, newTris.Length, 1, 2)
         };
 
-        // Construct the BVH, stored in "BVs" and "tris"
+        // Construct the BVH
         Stopwatch stopwatch = Stopwatch.StartNew();
-        RecursivelySplitBV(ref BVs, ref tris, 0, BVs[0], 0);
+        RecursivelySplitBV(ref newBVs, ref newTris, 0, newBVs[0]);
+        for (int i = 0; i < newBVs.Count; i++)
+        {
+            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += boundingVolumes.Length;
+            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += boundingVolumes.Length;
+            newBVs[i].triStart += tris.Length;
+        }
         DebugUtils.LogStopWatch("BVH construction", ref stopwatch);
 
         // Convert to bounding volume struct variant for shader buffer transfer
-        BoundingVolume[] boundingVolumes = BV.ClassToStruct(BVs);
+        BoundingVolume[] newBoundingVolumes = BV.ClassToStruct(newBVs);
 
-        return (boundingVolumes, Utils.TrisFromTri2s(tris));
+        // Add new bounding volumes & tris to existing arrays
+        tris = tris.Concat(Utils.TrisFromTri2s(newTris)).ToArray();
+        boundingVolumes = boundingVolumes.Concat(newBoundingVolumes).ToArray();
+
+        return (newBoundingVolumes.Length, newTris.Length);
+    }
+
+    public (BoundingVolume[], Tri[], SceneObjectData[]) CreateSceneObjects()
+    {
+        sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
+
+        // Create all scene objects
+        for (int i = 0; i < sceneObjects.Length; i++)
+        {
+            // Retrieve relevant game object data
+            GameObject sceneObject = sceneObjects[i];
+            Transform transform = sceneObject.transform;
+            SceneObjectSettings sceneObjectSettings = sceneObject.GetComponentInChildren<SceneObjectSettings>();
+            Mesh mesh = sceneObject.GetComponentInChildren<MeshFilter>().mesh;
+
+            SceneObjectData sceneObjectData = new SceneObjectData();
+
+            // Set transformation matrices
+            sceneObjectData.worldToLocalMatrix = Utils.CreateWorldToLocalMatrix(transform.position, transform.rotation.eulerAngles, transform.localScale);
+            sceneObjectData.localToWorldMatrix = sceneObjectData.worldToLocalMatrix.inverse;
+
+            // Set material key
+            sceneObjectData.materialKey = sceneObjectSettings.MaterialKey;
+
+            // Get mesh index
+            int meshIndex = Utils.GetMeshIndex(LoadedMeshes, mesh);
+            if (meshIndex == -1)
+            {
+                // Load mesh (construct it's BVH) if it has not yet been loaded
+                LoadedMeshes.Add(new(mesh, loadedTris.Length, loadedBoundingVolumes.Length));
+                ConstructBVHFromObj(ref loadedBoundingVolumes, ref loadedTris, mesh);
+                meshIndex = LoadedMeshes.Count - 1;
+            }
+
+            // Set start index values
+            sceneObjectData.triStartIndex = LoadedMeshes[meshIndex].triStartIndex;
+            sceneObjectData.bvStartIndex = LoadedMeshes[meshIndex].bvStartIndex;
+
+            // Add scene object data to the array
+            sceneObjectsData[i] = sceneObjectData;
+        }
+
+        return (loadedBoundingVolumes, loadedTris, sceneObjectsData);
     }
 }
