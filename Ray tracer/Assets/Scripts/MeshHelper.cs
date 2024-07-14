@@ -6,6 +6,7 @@ using System.Diagnostics;
 
 // Import utils from Resources.cs
 using Resources;
+using System.Threading.Tasks;
 // Usage: Utils.(functionName)()
 
 public class MeshHelper : MonoBehaviour
@@ -13,20 +14,24 @@ public class MeshHelper : MonoBehaviour
     public GameObject[] sceneObjects;
     public int MaxDepthBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
-    public int TriMaxPerOBJ;
+    public bool doReloadSceneBVH = true;
+    public Main m;
+
     private SceneObjectData[] sceneObjectsData;
+    private int[] loadedMeshesLookup;
     private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
     private Tri[] loadedTris = new Tri[0];
-    private List<(Mesh mesh, int triStartIndex, int bvStartIndex)> LoadedMeshes = new();
-    public Tri2[] LoadOBJ(Mesh mesh)
+    private int lastSceneBVHLength = 0;
+    private List<(Mesh mesh, Tri2[] meshTris, int componentStartIndex, int bvStartIndex)> LoadedMeshes = new();
+    public Tri2[] LoadMesh(Mesh mesh)
     {
         Vector3[] vertices = mesh.vertices;
         int[] triangles = mesh.triangles;
         int triNum = triangles.Length / 3;
 
         // Set tris data
-        Tri2[] tris = new Tri2[TriMaxPerOBJ == -1 ? triNum : Mathf.Min(triNum, TriMaxPerOBJ)];
-        for (int triCount = 0; triCount < (TriMaxPerOBJ == -1 ? triNum : Mathf.Min(triNum, TriMaxPerOBJ)); triCount++)
+        Tri2[] tris = new Tri2[triNum];
+        for (int triCount = 0; triCount < triNum; triCount++)
         {
             int triCount3 = 3 * triCount;
             int indexA = triangles[triCount3];
@@ -39,83 +44,61 @@ public class MeshHelper : MonoBehaviour
                 vB = vertices[indexB],
                 vC = vertices[indexC],
             };
-            tris[triCount].min = GetTri2Min(tris[triCount]);
-            tris[triCount].max = GetTri2Max(tris[triCount]);
-            tris[triCount].mid = Func.Avg(tris[triCount].min, tris[triCount].max);
+            tris[triCount].CalcMin();
+            tris[triCount].CalcMax();
         }
 
         return tris;
     }
-
-    private float3 GetTri2Min(Tri2 tri)
+    private float3 GetMin<T>(T[] components) where T : BVHComponent
     {
         float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
 
-        min.x = Mathf.Min(min.x, tri.vA.x, tri.vB.x, tri.vC.x);
-        min.y = Mathf.Min(min.y, tri.vA.y, tri.vB.y, tri.vC.y);
-        min.z = Mathf.Min(min.z, tri.vA.z, tri.vB.z, tri.vC.z);
-
-        return min;
-    }
-    private float3 GetTri2Min(Tri2[] tris)
-    {
-        float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-
-        foreach (var tri in tris)
+        foreach (var component in components)
         {
-            min.x = Mathf.Min(min.x, tri.min.x);
-            min.y = Mathf.Min(min.y, tri.min.y);
-            min.z = Mathf.Min(min.z, tri.min.z);
+            min.x = Mathf.Min(min.x, component.GetMin().x);
+            min.y = Mathf.Min(min.y, component.GetMin().y);
+            min.z = Mathf.Min(min.z, component.GetMin().z);
         }
 
         return min;
     }
-    private float3 GetTri2Min(List<Tri2> tris)
+    private float3 GetMin<T>(List<T> components) where T : BVHComponent
     {
         float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
 
-        foreach (var tri in tris)
+        foreach (var component in components)
         {
-            min.x = Mathf.Min(min.x, tri.min.x);
-            min.y = Mathf.Min(min.y, tri.min.y);
-            min.z = Mathf.Min(min.z, tri.min.z);
+            min.x = Mathf.Min(min.x, component.GetMin().x);
+            min.y = Mathf.Min(min.y, component.GetMin().y);
+            min.z = Mathf.Min(min.z, component.GetMin().z);
         }
 
         return min;
     }
 
-    private float3 GetTri2Max(Tri2 tri)
+    private float3 GetMax<T>(T[] components) where T : BVHComponent
     {
         float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
 
-        max.x = Mathf.Max(max.x, tri.vA.x, tri.vB.x, tri.vC.x);
-        max.y = Mathf.Max(max.y, tri.vA.y, tri.vB.y, tri.vC.y);
-        max.z = Mathf.Max(max.z, tri.vA.z, tri.vB.z, tri.vC.z);
-
-        return max;
-    }
-    private float3 GetTri2Max(Tri2[] tris)
-    {
-        float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
-
-        foreach (var tri in tris)
+        foreach (var component in components)
         {
-            max.x = Mathf.Max(max.x, tri.max.x);
-            max.y = Mathf.Max(max.y, tri.max.y);
-            max.z = Mathf.Max(max.z, tri.max.z);
+            max.x = Mathf.Max(max.x, component.GetMax().x);
+            max.y = Mathf.Max(max.y, component.GetMax().y);
+            max.z = Mathf.Max(max.z, component.GetMax().z);
         }
 
         return max;
     }
-    private float3 GetTri2Max(List<Tri2> tris)
+    private float3 GetMax<T>(List<T> components) where T : BVHComponent
     {
         float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
 
-        foreach (var tri in tris)
+        foreach (var component in components)
         {
-            max.x = Mathf.Max(max.x, tri.max.x);
-            max.y = Mathf.Max(max.y, tri.max.y);
-            max.z = Mathf.Max(max.z, tri.max.z);
+            max.x = Mathf.Max(max.x, component.GetMax().x);
+            max.y = Mathf.Max(max.y, component.GetMax().y);
+            max.z = Mathf.Max(max.z, component.GetMax().z);
         }
 
         return max;
@@ -132,33 +115,33 @@ public class MeshHelper : MonoBehaviour
         return area;
     }
 
-    float GetCost(List<Tri2> trisChildA, List<Tri2> trisChildB)
+    float GetCost<T>(List<T> componentsChildA, List<T> componentsChildB) where T : BVHComponent
     {
-        float costA = GetBoxArea(GetTri2Min(trisChildA), GetTri2Max(trisChildA)) * trisChildA.Count;
-        float costB = GetBoxArea(GetTri2Min(trisChildB), GetTri2Max(trisChildB)) * trisChildB.Count;
+        float costA = GetBoxArea(GetMin(componentsChildA), GetMax(componentsChildA)) * componentsChildA.Count;
+        float costB = GetBoxArea(GetMin(componentsChildB), GetMax(componentsChildB)) * componentsChildB.Count;
         float totCost = costA + costB;
 
         return totCost;
     }
 
-    private void SwapPair<T>(ref T[] array, int indexA, int indexB) => (array[indexB], array[indexA]) = (array[indexA], array[indexB]);
+    private void SwapPair<T>(ref T[] array, int indexA, int indexB) where T : BVHComponent => (array[indexB], array[indexA]) = (array[indexA], array[indexB]);
 
-    private int DivideIntoSubGroupsRef(ref Tri2[] tris, int axis, float3 splitCoord, int triStart, int totTris)
+    private int DivideIntoSubGroupsRef<T>(ref T[] components, int axis, float3 splitCoord, int componentStart, int totComponents) where T : BVHComponent
     {
-        int highestIndexA = triStart - 1;
+        int highestIndexA = componentStart - 1;
         int countA = 0;
-        for (int triIndex = triStart; triIndex < triStart + totTris; triIndex++)
+        for (int componentIndex = componentStart; componentIndex < componentStart + totComponents; componentIndex++)
         {
-            float3 pos = tris[triIndex].vA; // vA arbitrarily chosen
+            float3 pos = components[componentIndex].GetMid();
             if ((axis == 0 && pos.x < splitCoord.x) ||
                 (axis == 1 && pos.y < splitCoord.y) ||
                 (axis == 2 && pos.z < splitCoord.z))
             {
                 highestIndexA++;
                 countA++;
-                if (highestIndexA != triIndex)
+                if (highestIndexA != componentIndex)
                 {
-                    SwapPair(ref tris, highestIndexA, triIndex);
+                    SwapPair(ref components, highestIndexA, componentIndex);
                 }
             }
         }
@@ -166,30 +149,30 @@ public class MeshHelper : MonoBehaviour
         return countA;
     }
 
-    private (List<Tri2>, List<Tri2>) DivideIntoSubGroupsCopy(Tri2[] tris, int axis, float3 splitCoord, int triStart, int totTris)
+    private (List<T>, List<T>) DivideIntoSubGroupsCopy<T>(T[] components, int axis, float3 splitCoord, int componentStart, int totComponent) where T : BVHComponent
     {
-        List<Tri2> trisChildA = new List<Tri2>();
-        List<Tri2> trisChildB = new List<Tri2>();
+        List<T> componentsChildA = new List<T>();
+        List<T> componentsChildB = new List<T>();
 
-        for (int triIndex = triStart; triIndex < triStart + totTris; triIndex++)
+        for (int componentIndex = componentStart; componentIndex < componentStart + totComponent; componentIndex++)
         {
-            float3 pos = tris[triIndex].mid;
+            float3 pos = components[componentIndex].GetMid();
             if ((axis == 0 && pos.x < splitCoord.x) ||
                 (axis == 1 && pos.y < splitCoord.y) ||
                 (axis == 2 && pos.z < splitCoord.z))
             {
-                trisChildA.Add(tris[triIndex]);
+                componentsChildA.Add(components[componentIndex]);
             }
             else
             {
-                trisChildB.Add(tris[triIndex]);
+                componentsChildB.Add(components[componentIndex]);
             }
         }
 
-        return (trisChildA, trisChildB);
+        return (componentsChildA, componentsChildB);
     }
 
-    private int RecursivelySplitBV(ref List<BV> BVs, ref Tri2[] tris, int bvParentIndex, BV bvParent, int depth = 0)
+    private int RecursivelySplitBV<T>(ref List<BV> BVs, ref T[] components, int bvParentIndex, BV bvParent, int depth = 0) where T : BVHComponent
     {
         depth += 1;
         if (depth >= MaxDepthBVH) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
@@ -205,74 +188,71 @@ public class MeshHelper : MonoBehaviour
             for (int axis = 0; axis < 3; axis++)
             {
                 // Test splitting the parent bounding box
-                List<Tri2> trisChildA;
-                List<Tri2> trisChildB;
-                (trisChildA, trisChildB) = DivideIntoSubGroupsCopy(tris, axis, splitCoord, bvParent.triStart, bvParent.totTris);
+                List<T> componentsChildA;
+                List<T> componentsChildB;
+                (componentsChildA, componentsChildB) = DivideIntoSubGroupsCopy(components, axis, splitCoord, bvParent.componentStart, bvParent.totComponents);
 
                 // Calculate cost (total surface area) of the resulting box split
-                float cost = GetCost(trisChildA, trisChildB);
+                float cost = GetCost(componentsChildA, componentsChildB);
 
                 // Compare the resulting cost with the currently lowest split cost
                 if (cost < leastCostSplit.cost) { leastCostSplit = (splitCoord, axis, cost); }
             }
         }
 
-        // No valid split found (probably only 1 or 2 tris)
+        // No valid split found (probably only 1 or 2 components
         if (leastCostSplit.axis == -1) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
 
         // Divide the bounding box using the best tried split
-        int countA = DivideIntoSubGroupsRef(ref tris, leastCostSplit.axis, leastCostSplit.splitCoord, bvParent.triStart, bvParent.totTris);
+        int countA = DivideIntoSubGroupsRef(ref components, leastCostSplit.axis, leastCostSplit.splitCoord, bvParent.componentStart, bvParent.totComponents);
 
-        // Get tris for either child
-        List<Tri2> bestTrisChildA = tris.Skip(bvParent.triStart).Take(countA).ToList();
-        List<Tri2> bestTrisChildB = tris.Skip(bvParent.triStart + countA).Take(bvParent.totTris - countA).ToList();
+        // Get components for either child
+        List<T> componentsBestChildA = components.Skip(bvParent.componentStart).Take(countA).ToList();
+        List<T> componentsBestChildB = components.Skip(bvParent.componentStart + countA).Take(bvParent.totComponents - countA).ToList();
 
         // Recursively split child A
         int furthestChildIndex = bvParentIndex;
-        if (bestTrisChildA.Count != 0)
+        if (componentsBestChildA.Count != 0)
         {
             int childIndexA = bvParentIndex + 1;
             BVs[bvParentIndex].childIndexA = childIndexA;
-            BVs.Add(new BV(GetTri2Min(bestTrisChildA), GetTri2Max(bestTrisChildA), bvParent.triStart, bestTrisChildA.Count));
+            BVs.Add(new BV(GetMin(componentsBestChildA), GetMax(componentsBestChildA), bvParent.componentStart, componentsBestChildA.Count));
             DebugUtils.ChildIndexValidation(childIndexA, BVs.Count);
-            furthestChildIndex = RecursivelySplitBV(ref BVs, ref tris, childIndexA, BVs[childIndexA], depth);
+            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexA, BVs[childIndexA], depth);
         }
 
         // Recursively split child B
-        if (bestTrisChildB.Count != 0)
+        if (componentsBestChildB.Count != 0)
         {
             int childIndexB = furthestChildIndex + 1;
             BVs[bvParentIndex].childIndexB = childIndexB;
-            BVs.Add(new BV(GetTri2Min(bestTrisChildB), GetTri2Max(bestTrisChildB), bvParent.triStart + bestTrisChildA.Count, bestTrisChildB.Count));
+            BVs.Add(new BV(GetMin(componentsBestChildB), GetMax(componentsBestChildB), bvParent.componentStart + componentsBestChildA.Count, componentsBestChildB.Count));
             DebugUtils.ChildIndexValidation(childIndexB, BVs.Count);
-            furthestChildIndex = RecursivelySplitBV(ref BVs, ref tris, childIndexB, BVs[childIndexB], depth);
+            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexB, BVs[childIndexB], depth);
         }
 
         // Return the currently furthest child index
         return furthestChildIndex;
     }
 
-    private (int, int) ConstructBVHFromObj(ref BoundingVolume[] boundingVolumes, ref Tri[] tris, Mesh mesh)
+    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, Tri2[] newTris, ref Tri[] tris)
     {
-        Tri2[] newTris = LoadOBJ(mesh);
-
-        float3 min = GetTri2Min(newTris);
-        float3 max = GetTri2Max(newTris);
-        List<BV> newBVs = new List<BV>
-        {
-            // First BV
-            new BV(min, max, 0, newTris.Length, 1, 2)
-        };
+        float3 objectMin = GetMin(newTris);
+        float3 objectMax = GetMax(newTris);
+        List<BV> newBVs = new List<BV> { new BV(objectMin, objectMax, 0, newTris.Length, 1, 2) };
 
         // Construct the BVH
         Stopwatch stopwatch = Stopwatch.StartNew();
         RecursivelySplitBV(ref newBVs, ref newTris, 0, newBVs[0]);
-        for (int i = 0; i < newBVs.Count; i++)
+
+        int bvLength = boundingVolumes.Length;
+        int trisLength = tris.Length;
+        Parallel.For(0, newBVs.Count, i =>
         {
-            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += boundingVolumes.Length;
-            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += boundingVolumes.Length;
-            newBVs[i].triStart += tris.Length;
-        }
+            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += bvLength;
+            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += bvLength;
+            newBVs[i].componentStart += trisLength;
+        });
         DebugUtils.LogStopWatch("BVH construction", ref stopwatch);
 
         // Convert to bounding volume struct variant for shader buffer transfer
@@ -288,8 +268,9 @@ public class MeshHelper : MonoBehaviour
     public (BoundingVolume[], Tri[], SceneObjectData[]) CreateSceneObjects()
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
+        loadedMeshesLookup ??= new int[sceneObjects.Length];
 
-        // Create all scene objects
+        // Create all scene objects & triangle BVHs
         for (int i = 0; i < sceneObjects.Length; i++)
         {
             // Retrieve relevant game object data
@@ -312,18 +293,60 @@ public class MeshHelper : MonoBehaviour
             if (meshIndex == -1)
             {
                 // Load mesh (construct it's BVH) if it has not yet been loaded
-                LoadedMeshes.Add(new(mesh, loadedTris.Length, loadedBoundingVolumes.Length));
-                ConstructBVHFromObj(ref loadedBoundingVolumes, ref loadedTris, mesh);
+                LoadedMeshes.Add(new(mesh, LoadMesh(mesh), loadedTris.Length, loadedBoundingVolumes.Length));
+                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris);
                 meshIndex = LoadedMeshes.Count - 1;
             }
+            loadedMeshesLookup[i] = meshIndex;
 
             // Set start index values
-            sceneObjectData.triStartIndex = LoadedMeshes[meshIndex].triStartIndex;
             sceneObjectData.bvStartIndex = LoadedMeshes[meshIndex].bvStartIndex;
 
-            // Add scene object data to the array
+            // Add scene object data to the array;
             sceneObjectsData[i] = sceneObjectData;
         }
+
+        // --- Scene object BVH ---
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        Utils.RemoveFromEndOfArray(ref loadedBoundingVolumes, lastSceneBVHLength);
+
+        // Transform tri mesh to global space
+        for (int i = 0; i < sceneObjects.Length; i++)
+        {
+            SceneObjectData sceneObjectData = sceneObjectsData[i];
+            Tri2[] sceneObjectTris = LoadedMeshes[loadedMeshesLookup[i]].meshTris;
+            float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
+            float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
+            for (int j = 0; j < sceneObjectTris.Length; j++)
+            {
+                sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, min, max);
+            }
+
+            sceneObjectsData[i].min = GetMin(sceneObjectTris);
+            sceneObjectsData[i].max = GetMax(sceneObjectTris);
+        }
+
+        float3 sceneMin = GetMin(sceneObjectsData);
+        float3 sceneMax = GetMax(sceneObjectsData);
+        List<BV> newBVs = new List<BV> { new BV(sceneMin, sceneMax, 0, sceneObjectsData.Length, 1, 2) };
+
+        // Construct the BVH
+        RecursivelySplitBV(ref newBVs, ref sceneObjectsData, 0, newBVs[0]);
+        m.rtShader.SetInt("SceneBVHStartIndex", loadedBoundingVolumes.Length);
+        Parallel.For(0, newBVs.Count, i =>
+        {
+            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += loadedBoundingVolumes.Length;
+            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += loadedBoundingVolumes.Length;
+        });
+
+        DebugUtils.LogStopWatch("BVH construction (scene objects)", ref stopwatch);
+
+        // Replace existing scene BVH with new BVH data
+        BoundingVolume[] newBoundingVolumes = BV.ClassToStruct(newBVs);
+        loadedBoundingVolumes = loadedBoundingVolumes.Concat(newBoundingVolumes).ToArray();
+        lastSceneBVHLength = newBoundingVolumes.Length;
 
         return (loadedBoundingVolumes, loadedTris, sceneObjectsData);
     }

@@ -63,8 +63,7 @@ public class Main : MonoBehaviour
     private void Start()
     {
         lastCameraPosition = transform.position;
-
-        SetData(); // Set data of render object compute buffers
+        lastCameraRotation = transform.rotation;
 
         UpdatePerFrame();
         UpdateSettings();
@@ -77,14 +76,13 @@ public class Main : MonoBehaviour
         UpdatePerFrame();
 
         if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
-        UpdateSettings(); // temp.
     }
 
     private void LateUpdate()
     {
         if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
         {
-            UpdateSettings();
+            DoUpdateSettings = true;
             lastCameraPosition = transform.position;
             lastCameraRotation = transform.rotation;
         }

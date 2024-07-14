@@ -6,6 +6,7 @@
 const int SpheresNum;
 const int TrisNum;
 const int BVsNum;
+const int SceneBVHStartIndex;
 const int SceneObjectsNum;
 const int MaxDepthBVH;
 const float ScatterProbability;
@@ -203,7 +204,7 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
         
         if (isLeaf)
         {
-            for (int triIndex = bv.triStart; triIndex < bv.triStart + bv.totTris; triIndex++)
+            for (int triIndex = bv.componentStart; triIndex < bv.componentStart + bv.totComponents; triIndex++)
             {
                 Tri tri = Tris[triIndex];
                 TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
@@ -248,44 +249,80 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
     }
 }
 
-HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
+void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
 {
-    // HitInfo initialization
-    HitInfo hitInfo;
-    hitInfo.didHit = false;
-    hitInfo.dst = 1.#INF;
-    hitInfo.hitPoint = 0;
-    hitInfo.normal = 0;
-    hitInfo.materialKey = 0;
+    int bvStack[MaxDepthBVH_ + 1];
+    int stackPointer = 0;
+    bvStack[stackPointer++] = SceneBVHStartIndex;
 
-    for (int sceneObjectIndex = 0; sceneObjectIndex < SceneObjectsNum; sceneObjectIndex++)
+    while (stackPointer > 0)
     {
-        SceneObject sceneObject = SceneObjects[sceneObjectIndex];
+        BoundingVolume bv = BVs[bvStack[--stackPointer]];
 
-        Ray localRay;
-        localRay.pos = mul(sceneObject.worldToLocalMatrix, float4(ray.pos, 1));
-        localRay.dir = mul(sceneObject.worldToLocalMatrix, float4(ray.dir, 0));
-
-        // localRay.invDir = 1 / localRay.dir;
-
-        HitInfo localHitInfo;
-        localHitInfo.didHit = false;
-        localHitInfo.dst = 1.#INF;
-        localHitInfo.hitPoint = 0;
-        localHitInfo.normal = 0;
-        localHitInfo.materialKey = 0;
-
-        if (IterationSettings.z) TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
-
-        if (localHitInfo.dst < hitInfo.dst)
+        bool isLeaf = bv.childIndexA == -1 && bv.childIndexB == -1;
+        
+        if (isLeaf)
         {
-            hitInfo.didHit = true;
-            hitInfo.dst = localHitInfo.dst;
-            hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)));
-            hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
-            hitInfo.materialKey = sceneObject.materialKey;
+            for (int sceneObjectIndex = bv.componentStart; sceneObjectIndex < bv.componentStart + bv.totComponents; sceneObjectIndex++)
+            {
+                SceneObject sceneObject = SceneObjects[sceneObjectIndex];
+
+                Ray localRay;
+                localRay.pos = mul(sceneObject.worldToLocalMatrix, float4(ray.pos, 1)).xyz;
+                localRay.dir = mul(sceneObject.worldToLocalMatrix, float4(ray.dir, 0)).xyz;
+                // localRay.invDir = 1 / localRay.dir; (optimisation to add)
+        
+                HitInfo localHitInfo = InitHitInfo();
+        
+                if (IterationSettings.z) TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
+        
+                if (localHitInfo.dst < hitInfo.dst)
+                {
+                    hitInfo.didHit = true;
+                    hitInfo.dst = localHitInfo.dst;
+                    hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)).xyz);
+                    hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
+                    hitInfo.materialKey = sceneObject.materialKey;
+                }
+            }
+        }
+        else
+        {
+            float dstA = 1.#INF;
+            float dstB = 1.#INF;
+
+            // If child nodes exist, get the distances to their respective BVs
+            if (bv.childIndexA != -1)
+            {
+                BoundingVolume bvA = BVs[bv.childIndexA];
+                dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            }
+            if (bv.childIndexB != -1)
+            {
+                BoundingVolume bvB = BVs[bv.childIndexB];
+                dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
+            }
+
+            // Push the nearest BV last, to avaluate it first
+            if (dstA < dstB)
+            {
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+            }
+            else
+            {
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+            }
         }
     }
+}
+
+HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
+{
+    HitInfo hitInfo = InitHitInfo();
+
+    TraverseSceneBVH(hitInfo, debugData, ray);
 
     if (IterationSettings.x) IterateSpheres(hitInfo, ray);
     if (IterationSettings.w) IterateTris(hitInfo, ray);
@@ -344,8 +381,7 @@ TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
 void TraceRays (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
-    DebugData debugData;
-    debugData.triChecks = 0; debugData.bvChecks = 0;
+    DebugData debugData = InitDebugData();
     int state = id.y * Resolution.x + id.x + FrameRand;
 
     // Calculate focal plane world pos for the given pixel

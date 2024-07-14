@@ -4,16 +4,16 @@ public class BV
 {
     public float3 min;
     public float3 max;
-    public int triStart;
-    public int totTris;
+    public int componentStart;
+    public int totComponents;
     public int childIndexA;
     public int childIndexB;
-    public BV(float3 min, float3 max, int triStart = -1, int totTris = -1, int childIndexA = -1, int childIndexB = -1)
+    public BV(float3 min, float3 max, int componentStart = -1, int totComponents = -1, int childIndexA = -1, int childIndexB = -1)
     {
         this.min = min;
         this.max = max;
-        this.triStart = triStart;
-        this.totTris = totTris;
+        this.componentStart = componentStart;
+        this.totComponents = totComponents;
         this.childIndexA = childIndexA;
         this.childIndexB = childIndexB;
     }
@@ -23,8 +23,8 @@ public class BV
         {
             min = min,
             max = max,
-            triStart = triStart,
-            totTris = totTris,
+            componentStart = componentStart,
+            totComponents = totComponents,
             childIndexA = childIndexA,
             childIndexB = childIndexB
         };
@@ -55,8 +55,8 @@ public struct BoundingVolume
 {
     public float3 min;
     public float3 max;
-    public int triStart;
-    public int totTris;
+    public int componentStart;
+    public int totComponents;
     public int childIndexA;
     public int childIndexB;
 };

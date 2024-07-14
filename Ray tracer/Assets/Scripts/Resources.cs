@@ -6,6 +6,7 @@ using Vector3 = UnityEngine.Vector3;
 using Debug = UnityEngine.Debug;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Resources
 {
@@ -142,13 +143,20 @@ namespace Resources
             return true;
         }
 
-        public static int GetMeshIndex(List<(Mesh mesh, int triStartIndex, int bvStartIndex)> meshArray, Mesh meshToCheck)
+        public static int GetMeshIndex(List<(Mesh mesh, Tri2[] meshTris, int triStartIndex, int bvStartIndex)> meshArray, Mesh meshToCheck)
         {
             for (int i = 0; i < meshArray.Count; i++)
             {
                 if (AreMeshesEqual(meshArray[i].mesh, meshToCheck)) return i;
             }
             return -1;
+        }
+
+        public static void RemoveFromEndOfArray<T>(ref T[] originalArray, int x)
+        {
+            // Use Take to get a new array without the last x elements
+            T[] newArray = originalArray.Take(originalArray.Length - x).ToArray();
+            originalArray = newArray;
         }
     }
 
@@ -308,6 +316,12 @@ namespace Resources
                 a.y != 0 ? 1.0f / a.y : 0,
                 a.z != 0 ? 1.0f / a.z : 0
             );
+        }
+
+        public static float3 Mul(Matrix4x4 matrix, float3 a)
+        {
+            float4 transformedA = math.mul(matrix, new float4(a, 1.0f));
+            return new float3(transformedA.x, transformedA.y, transformedA.z);
         }
     }
 

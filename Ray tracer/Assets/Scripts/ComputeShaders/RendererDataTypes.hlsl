@@ -20,8 +20,8 @@ struct BoundingVolume
 {
     float3 min;
     float3 max;
-    int triStart;
-    int totTris;
+    int componentStart;
+    int totComponents;
     int childIndexA;
     int childIndexB;
 };
@@ -30,8 +30,9 @@ struct SceneObject
     float4x4 worldToLocalMatrix;
     float4x4 localToWorldMatrix;
     int materialKey;
-    int triStartIndex;
     int bvStartIndex;
+    float3 min;
+    float3 max;
 };
 struct Sphere
 {
@@ -84,3 +85,33 @@ struct DebugData
     int triChecks;
     int bvChecks;
 };
+
+Ray InitRay()
+{
+    Ray ray;
+    ray.pos = 0;
+    ray.dir = 0;
+
+    return ray;
+}
+
+HitInfo InitHitInfo()
+{
+    HitInfo hitInfo;
+    hitInfo.didHit = false;
+    hitInfo.dst = 1.#INF;
+    hitInfo.hitPoint = 0;
+    hitInfo.normal = 0;
+    hitInfo.materialKey = 0;
+
+    return hitInfo;
+}
+
+DebugData InitDebugData()
+{
+    DebugData debugData;
+    debugData.triChecks = 0;
+    debugData.bvChecks = 0;
+
+    return debugData;
+}
