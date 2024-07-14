@@ -12,17 +12,22 @@ using System.Threading.Tasks;
 public class MeshHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
-    public int MaxDepthBVH;
+    public int MaxDepthSceneBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
     public bool doReloadSceneBVH = true;
     public Main m;
 
     private SceneObjectData[] sceneObjectsData;
-    private int[] loadedMeshesLookup;
     private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
-    private Tri[] loadedTris = new Tri[0];
-    private int lastSceneBVHLength = 0;
     private List<(Mesh mesh, Tri2[] meshTris, int componentStartIndex, int bvStartIndex)> LoadedMeshes = new();
+    private Tri[] loadedTris = new Tri[0];
+    private int[] loadedMeshesLookup;
+    private int lastSceneBVHLength = 0;
+
+    private void OnValidate()
+    {
+        if (m.ProgramStarted) m.DoUpdateSettings = true;
+    }
     public Tri2[] LoadMesh(Mesh mesh)
     {
         Vector3[] vertices = mesh.vertices;
@@ -172,10 +177,10 @@ public class MeshHelper : MonoBehaviour
         return (componentsChildA, componentsChildB);
     }
 
-    private int RecursivelySplitBV<T>(ref List<BV> BVs, ref T[] components, int bvParentIndex, BV bvParent, int depth = 0) where T : BVHComponent
+    private int RecursivelySplitBV<T>(ref List<BV> BVs, ref T[] components, int bvParentIndex, BV bvParent, int maxDepth, int depth = 0) where T : BVHComponent
     {
         depth += 1;
-        if (depth >= MaxDepthBVH) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
+        if (depth >= maxDepth) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
         
         (float3 splitCoord, int axis, float cost) leastCostSplit = (0, -1, float.MaxValue);
 
@@ -218,7 +223,7 @@ public class MeshHelper : MonoBehaviour
             BVs[bvParentIndex].childIndexA = childIndexA;
             BVs.Add(new BV(GetMin(componentsBestChildA), GetMax(componentsBestChildA), bvParent.componentStart, componentsBestChildA.Count));
             DebugUtils.ChildIndexValidation(childIndexA, BVs.Count);
-            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexA, BVs[childIndexA], depth);
+            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexA, BVs[childIndexA], maxDepth, depth);
         }
 
         // Recursively split child B
@@ -228,14 +233,14 @@ public class MeshHelper : MonoBehaviour
             BVs[bvParentIndex].childIndexB = childIndexB;
             BVs.Add(new BV(GetMin(componentsBestChildB), GetMax(componentsBestChildB), bvParent.componentStart + componentsBestChildA.Count, componentsBestChildB.Count));
             DebugUtils.ChildIndexValidation(childIndexB, BVs.Count);
-            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexB, BVs[childIndexB], depth);
+            furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexB, BVs[childIndexB], maxDepth, depth);
         }
 
         // Return the currently furthest child index
         return furthestChildIndex;
     }
 
-    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, Tri2[] newTris, ref Tri[] tris)
+    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, Tri2[] newTris, ref Tri[] tris, int maxDepth)
     {
         float3 objectMin = GetMin(newTris);
         float3 objectMax = GetMax(newTris);
@@ -243,7 +248,7 @@ public class MeshHelper : MonoBehaviour
 
         // Construct the BVH
         Stopwatch stopwatch = Stopwatch.StartNew();
-        RecursivelySplitBV(ref newBVs, ref newTris, 0, newBVs[0]);
+        RecursivelySplitBV(ref newBVs, ref newTris, 0, newBVs[0], maxDepth);
 
         int bvLength = boundingVolumes.Length;
         int trisLength = tris.Length;
@@ -269,6 +274,8 @@ public class MeshHelper : MonoBehaviour
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
+        int[] BVHDepths = new int[sceneObjects.Length + 1];
+        BVHDepths[sceneObjects.Length] = MaxDepthSceneBVH;
 
         // Create all scene objects & triangle BVHs
         for (int i = 0; i < sceneObjects.Length; i++)
@@ -287,6 +294,8 @@ public class MeshHelper : MonoBehaviour
 
             // Set material key
             sceneObjectData.materialKey = sceneObjectSettings.MaterialKey;
+            sceneObjectData.MaxDepthBVH = sceneObjectSettings.MaxDepthBVH;
+            BVHDepths[i] = sceneObjectData.MaxDepthBVH;
 
             // Get mesh index
             int meshIndex = Utils.GetMeshIndex(LoadedMeshes, mesh);
@@ -294,7 +303,7 @@ public class MeshHelper : MonoBehaviour
             {
                 // Load mesh (construct it's BVH) if it has not yet been loaded
                 LoadedMeshes.Add(new(mesh, LoadMesh(mesh), loadedTris.Length, loadedBoundingVolumes.Length));
-                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris);
+                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris, sceneObjectData.MaxDepthBVH);
                 meshIndex = LoadedMeshes.Count - 1;
             }
             loadedMeshesLookup[i] = meshIndex;
@@ -305,6 +314,8 @@ public class MeshHelper : MonoBehaviour
             // Add scene object data to the array;
             sceneObjectsData[i] = sceneObjectData;
         }
+
+        m.rtShader.SetInt("MaxBVHDepth", Func.MaxInt(MaxDepthSceneBVH));
 
         // --- Scene object BVH ---
 
@@ -333,7 +344,7 @@ public class MeshHelper : MonoBehaviour
         List<BV> newBVs = new List<BV> { new BV(sceneMin, sceneMax, 0, sceneObjectsData.Length, 1, 2) };
 
         // Construct the BVH
-        RecursivelySplitBV(ref newBVs, ref sceneObjectsData, 0, newBVs[0]);
+        RecursivelySplitBV(ref newBVs, ref sceneObjectsData, 0, newBVs[0], MaxDepthSceneBVH);
         m.rtShader.SetInt("SceneBVHStartIndex", loadedBoundingVolumes.Length);
         Parallel.For(0, newBVs.Count, i =>
         {

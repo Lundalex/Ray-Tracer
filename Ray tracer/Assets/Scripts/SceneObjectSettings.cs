@@ -9,29 +9,21 @@ using Resources;
 public class SceneObjectSettings : MonoBehaviour
 {
     public int MaterialKey;
-    public int MaxDepthBVH; // Not yet integrated
-    private bool ProgramStarted = false;
+    public int MaxDepthBVH;
     private Main m;
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
 
     private void Start()
     {
-        GameObject MainCameraObject = GameObject.Find("Main Camera");
-        m = MainCameraObject.GetComponent<Main>();
-
         lastCameraPosition = transform.position;
         lastCameraRotation = transform.rotation;
-
-        ProgramStarted = true;
     }
 
     private void OnValidate()
     {
-        if (ProgramStarted)
-        {
-            m.DoUpdateSettings = true;
-        }
+        m = m != null ? m : GameObject.Find("Main Camera").GetComponent<Main>();
+        if (m.ProgramStarted) m.DoUpdateSettings = true;
     }
     private void LateUpdate()
     {

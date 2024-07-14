@@ -9,6 +9,7 @@ public struct SceneObjectData : BVHComponent
     public Matrix4x4 localToWorldMatrix;
     public int materialKey;
     public int bvStartIndex;
+    public int MaxDepthBVH;
     public float3 min;
     public float3 max;
     public float3 GetMin() => min;

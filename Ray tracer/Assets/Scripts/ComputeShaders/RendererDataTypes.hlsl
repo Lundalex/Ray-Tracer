@@ -31,6 +31,7 @@ struct SceneObject
     float4x4 localToWorldMatrix;
     int materialKey;
     int bvStartIndex;
+    int MaxDepthBVH;
     float3 min;
     float3 max;
 };

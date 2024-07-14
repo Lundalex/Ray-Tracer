@@ -133,7 +133,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
       propertyPath: MaterialKey
-      value: 1
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: MaxDepthBVH
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 6541027715856167117, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
       propertyPath: m_Name
@@ -297,7 +301,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf57d16cf254eb348936bec573a2b16a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  DoUpdateSettings: 0
   RenderSpheres: 1
   RenderBVs: 0
   RenderTriObjects: 1
@@ -372,9 +375,8 @@ MonoBehaviour:
   - {fileID: 1707828470}
   - {fileID: 1238442920}
   - {fileID: 2095872761}
-  MaxDepthBVH: 12
+  MaxDepthSceneBVH: 10
   SplitResolution: 5
-  TriMaxPerOBJ: -1
   doReloadSceneBVH: 1
   m: {fileID: 1356186229}
 --- !u!114 &1356186232
@@ -441,6 +443,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Dragon8k
       objectReference: {fileID: 0}
+    - target: {fileID: 9189337742774499530, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+      propertyPath: MaterialKey
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9189337742774499530, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+      propertyPath: MaxDepthBVH
+      value: 10
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -502,6 +512,10 @@ PrefabInstance:
     - target: {fileID: 2590642388382468085, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: m_Name
       value: Dragon8k (1)
+      objectReference: {fileID: 0}
+    - target: {fileID: 9189337742774499530, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+      propertyPath: MaxDepthBVH
+      value: 10
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

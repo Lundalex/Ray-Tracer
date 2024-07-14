@@ -3,11 +3,11 @@ using Unity.Mathematics;
 
 // Import utils from Resources.cs
 using Resources;
+using System;
 // Usage: Utils.(functionName)()
 
 public class Main : MonoBehaviour
 {
-    public bool DoUpdateSettings;
     public bool RenderSpheres;
     public bool RenderBVs;
     public bool RenderTriObjects;
@@ -40,6 +40,10 @@ public class Main : MonoBehaviour
     public MeshHelper meshHelper;
     public ObjectSettings objectSettings;
 
+    // Script communication
+    [NonSerialized] public bool DoUpdateSettings;
+    [NonSerialized] public bool ProgramStarted = false;
+
     // Private variables
     private RenderTexture rtResultTexture;
     private RenderTexture debugOverlayTexture;
@@ -56,7 +60,7 @@ public class Main : MonoBehaviour
     private ComputeBuffer SceneObjectDataBuffer;
     private ComputeBuffer MaterialBuffer;
 
-    private bool ProgramStarted = false;
+    // Camera data record
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
 
@@ -133,10 +137,7 @@ public class Main : MonoBehaviour
 
     private void OnValidate()
     {
-        if (ProgramStarted)
-        {
-            UpdateSettings();
-        }
+        if (ProgramStarted) DoUpdateSettings = true;
     }
 
     private void UpdateSettings()
@@ -162,9 +163,6 @@ public class Main : MonoBehaviour
 
         rtShader.SetFloat("defocusStrength", DefocusStrength);
         rtShader.SetFloat("focalPlaneFactor", focalPlaneFactor);
-
-        // Mesh helper
-        rtShader.SetInt("MaxDepthBVH", meshHelper.MaxDepthBVH);
 
         // Debug overlay
         int[] DebugDataMaxValues = new int[] { DebugMaxTriChecks, DebugMaxBVChecks };
@@ -196,7 +194,7 @@ public class Main : MonoBehaviour
             Material2s[i] = new Material2
             {
                 color = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
-                specularColor = new float3(1, 1, 1), // Specular color is currently set to white for all Material2 types
+                specularColor = new float3(1, 1, 1), // Specular color is currently set to white for all materials
                 brightness = MatTypesInput1[i].w,
                 smoothness = MatTypesInput2[i].x
             };
@@ -210,7 +208,6 @@ public class Main : MonoBehaviour
         // Set BVHEnable data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
         shaderHelper.SetBVBuffer(BVBuffer);
-        rtShader.SetInt("MaxDepthBVH", meshHelper.MaxDepthBVH);
 
         // Set Tris data
         TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);

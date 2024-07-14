@@ -6,9 +6,9 @@
 const int SpheresNum;
 const int TrisNum;
 const int BVsNum;
+const int MaxBVHDepth;
 const int SceneBVHStartIndex;
 const int SceneObjectsNum;
-const int MaxDepthBVH;
 const float ScatterProbability;
 
 // Render object iteration settings
@@ -192,7 +192,7 @@ void IterateBVs(inout HitInfo hitInfo, Ray ray)
 
 void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, int bvStartIndex)
 {
-    int bvStack[MaxDepthBVH_ + 1];
+    int bvStack[MAX_BVH_DEPTH];
     int stackPointer = 0;
     bvStack[stackPointer++] = bvStartIndex;
 
@@ -251,7 +251,7 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
 
 void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
 {
-    int bvStack[MaxDepthBVH_ + 1];
+    int bvStack[MAX_BVH_DEPTH];
     int stackPointer = 0;
     bvStack[stackPointer++] = SceneBVHStartIndex;
 
@@ -421,5 +421,6 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
     // Result[id.xy] = float4(col.x, col.y, col.z, 0);
     float2 weightedDebugDataMaxValues = RaysPerPixel * DebugDataMaxValues;
-    DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, 0, 0);
+    bool badMaxBVHDepth = MaxBVHDepth >= MAX_BVH_DEPTH;
+    DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, badMaxBVHDepth, 0);
 }

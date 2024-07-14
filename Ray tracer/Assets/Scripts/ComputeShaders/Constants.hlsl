@@ -7,4 +7,4 @@ static const float PI = 3.1415926;
 static const int TN_RT = 8; // RayTracer
 static const int TN_PC = 16; // PreCalc
 
-static const int MaxDepthBVH_ = 20;
+static const int MAX_BVH_DEPTH = 20;
