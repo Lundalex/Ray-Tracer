@@ -33,36 +33,6 @@ void ApplyTransformTriVertices(float3 rot, inout float3 a, inout float3 b, inout
     c = mul(rotationMatrix, c);
 }
 
-float2 triUV(float3 a, float3 b, float3 c, float3 p, float scale)
-{
-    // Calculate barycentric coordinates of point p with respect to triangle ABC
-    float3 v0 = b - a;
-    float3 v1 = c - a;
-    float3 v2 = p - a;
-
-    float dot00 = dot(v0, v0);
-    float dot01 = dot(v0, v1);
-    float dot02 = dot(v0, v2);
-    float dot11 = dot(v1, v1);
-    float dot12 = dot(v1, v2);
-
-    float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
-    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-    float w = 1.0 - u - v;
-
-    // UV coordinates for vertex a, b, and c
-    float2 uvA = float2(0.0, 0.0);
-    float2 uvB = float2(1.0, 0.0);
-    float2 uvC = float2(0.0, 1.0);
-
-    // Interpolate UV coordinates of point p based on UV coordinates of vertices a, b, and c
-    float2 uv = (u * uvA + v * uvB + w * uvC) * scale % 1.0;
-
-    return uv;
-}
-
-
 float sqr(float a)
 {
 	return a * a;

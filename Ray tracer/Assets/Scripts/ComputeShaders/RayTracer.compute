@@ -37,11 +37,16 @@ const int2 DebugDataMaxValues;
 const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
 const int FrameCount; // Each frame: FrameCount++
 
+// Temp tex.
+const uint2 TexDims;
+
 RWStructuredBuffer<Material2> Materials;
 RWStructuredBuffer<Sphere> Spheres;
 RWStructuredBuffer<Tri> Tris;
 RWStructuredBuffer<BoundingVolume> BVs;
 RWStructuredBuffer<SceneObject> SceneObjects;
+
+Texture2D<float4> TestTexture;
 
 RWTexture2D<float4> Result;
 RWTexture2D<float4> DebugOverlay;
@@ -78,7 +83,7 @@ float SphereDst (float3 point2, Sphere sphere)
     return sgnDst;
 }
 
-TriangleHitInfo RayTriangleIntersect(Ray ray, Tri tri)
+TriHitInfo RayTriangleIntersect(Ray ray, Tri tri)
 {
     float3 edgeAB = tri.vB - tri.vA;
     float3 edgeAC = tri.vC - tri.vA;
@@ -96,11 +101,12 @@ TriangleHitInfo RayTriangleIntersect(Ray ray, Tri tri)
     float w = 1 - u - v;
 
     // Initialize hit info
-    TriangleHitInfo triangleHitInfo;
-    triangleHitInfo.didHit = determinant >= 1E-8 && dst >= 0 && u >= 0 && v >= 0 && w >= 0;
-    triangleHitInfo.hitPoint = ray.pos + ray.dir * dst;
-    triangleHitInfo.dst = dst;
-    return triangleHitInfo;
+    TriHitInfo triHitInfo;
+    triHitInfo.didHit = determinant >= 1E-8 && dst >= 0 && u >= 0 && v >= 0 && w >= 0;
+    triHitInfo.hitPoint = ray.pos + ray.dir * dst;
+    triHitInfo.uv = triHitInfo.didHit ? tri.uvA * w + tri.uvB * u + tri.uvC * v : float2(0, 0);
+    triHitInfo.dst = dst;
+    return triHitInfo;
 }
 
 float RayBVIntersect(Ray ray, BoundingVolume bv)
@@ -157,14 +163,14 @@ void IterateTris(inout HitInfo hitInfo, Ray ray)
     {
         Tri tri = Tris[i];
 
-        TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri);
+        TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri);
         
-        if (triangleHitInfo.didHit)
+        if (triHitInfo.didHit)
         { 
-            if (triangleHitInfo.dst < hitInfo.dst)
+            if (triHitInfo.dst < hitInfo.dst)
             {
                 hitInfo.didHit = true;
-                hitInfo.dst = triangleHitInfo.dst;
+                hitInfo.dst = triHitInfo.dst;
                 hitInfo.materialKey = 0;
                 hitInfo.normal = tri.normal;
             }
@@ -207,12 +213,14 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
             for (int triIndex = bv.componentStart; triIndex < bv.componentStart + bv.totComponents; triIndex++)
             {
                 Tri tri = Tris[triIndex];
-                TriangleHitInfo triangleHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
+                TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
                 
-                if (triangleHitInfo.didHit && triangleHitInfo.dst < hitInfo.dst)
+                if (triHitInfo.didHit && triHitInfo.dst < hitInfo.dst)
                 {
                     hitInfo.didHit = true;
-                    hitInfo.dst = triangleHitInfo.dst;
+                    hitInfo.dst = triHitInfo.dst;
+                    hitInfo.hitPoint = triHitInfo.hitPoint;
+                    hitInfo.uv = triHitInfo.uv;
                     hitInfo.normal = tri.normal;
                 }
             }
@@ -274,7 +282,7 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
         
                 HitInfo localHitInfo = InitHitInfo();
         
-                if (IterationSettings.z) TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
+                TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
         
                 if (localHitInfo.dst < hitInfo.dst)
                 {
@@ -282,6 +290,7 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
                     hitInfo.dst = localHitInfo.dst;
                     hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)).xyz);
                     hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
+                    hitInfo.uv = localHitInfo.uv;
                     hitInfo.materialKey = sceneObject.materialKey;
                 }
             }
@@ -322,13 +331,38 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
 {
     HitInfo hitInfo = InitHitInfo();
 
-    TraverseSceneBVH(hitInfo, debugData, ray);
+    if (IterationSettings.z) TraverseSceneBVH(hitInfo, debugData, ray);
 
-    if (IterationSettings.x) IterateSpheres(hitInfo, ray);
-    if (IterationSettings.w) IterateTris(hitInfo, ray);
-    if (IterationSettings.y) IterateBVs(hitInfo, ray);
+    // May not work!
+    // if (IterationSettings.x) IterateSpheres(hitInfo, ray);
+    // if (IterationSettings.w) IterateTris(hitInfo, ray);
+    // if (IterationSettings.y) IterateBVs(hitInfo, ray);
 
     return hitInfo;
+}
+
+float3 SampleTexColor(float2 uv)
+{
+    float2 texCoords = int2(uv * TexDims);
+
+    int2 iTexCoords = int2(texCoords);
+    float2 fTexCoords = frac(texCoords);
+
+    int2 texel00 = iTexCoords % TexDims;
+    int2 texel10 = (iTexCoords + int2(1, 0)) % TexDims;
+    int2 texel01 = (iTexCoords + int2(0, 1)) % TexDims;
+    int2 texel11 = (iTexCoords + int2(1, 1)) % TexDims;
+
+    float4 col00 = TestTexture[texel00];
+    float4 col10 = TestTexture[texel10];
+    float4 col01 = TestTexture[texel01];
+    float4 col11 = TestTexture[texel11];
+
+    float4 col0 = lerp(col00, col10, fTexCoords.x);
+    float4 col1 = lerp(col01, col11, fTexCoords.x);
+    float4 col = lerp(col0, col1, fTexCoords.y);
+
+    return col.xyz;
 }
 
 TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
@@ -364,7 +398,8 @@ TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
             }
 
             // Calculate new traceInfo values
-            float3 emittedLight = material.color * material.brightness;
+            float3 sampleCol = SampleTexColor(hitInfo.uv); // changed from material.color
+            float3 emittedLight = sampleCol * material.brightness;
             traceInfo.incomingLight += emittedLight * traceInfo.rayColor;
             traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
         }

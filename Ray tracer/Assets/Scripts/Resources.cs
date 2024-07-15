@@ -73,6 +73,9 @@ namespace Resources
                     vA = tri2s[i].vA,
                     vB = tri2s[i].vB,
                     vC = tri2s[i].vC,
+                    uvA = tri2s[i].uvA,
+                    uvB = tri2s[i].uvB,
+                    uvC = tri2s[i].uvC
                 };
             }
 

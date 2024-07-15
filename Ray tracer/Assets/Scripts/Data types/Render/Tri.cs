@@ -5,6 +5,9 @@ public struct Tri : BVHComponent
     public float3 vA;
     public float3 vB;
     public float3 vC;
+    public float2 uvA;
+    public float2 uvB;
+    public float2 uvC;
     public float3 normal;
     public int materialKey;
     public int parentKey;

@@ -3,10 +3,10 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 // Import utils from Resources.cs
 using Resources;
-using System.Threading.Tasks;
 // Usage: Utils.(functionName)()
 
 public class MeshHelper : MonoBehaviour
@@ -31,8 +31,10 @@ public class MeshHelper : MonoBehaviour
     public Tri2[] LoadMesh(Mesh mesh)
     {
         Vector3[] vertices = mesh.vertices;
+        Vector2[] UVs = mesh.uv;
         int[] triangles = mesh.triangles;
         int triNum = triangles.Length / 3;
+        bool containsUVs = UVs.Length > 0;
 
         // Set tris data
         Tri2[] tris = new Tri2[triNum];
@@ -49,6 +51,12 @@ public class MeshHelper : MonoBehaviour
                 vB = vertices[indexB],
                 vC = vertices[indexC],
             };
+            if (containsUVs)
+            {
+                tris[triCount].uvA = UVs[indexA];
+                tris[triCount].uvB = UVs[indexB];
+                tris[triCount].uvC = UVs[indexC];
+            }
             tris[triCount].CalcMin();
             tris[triCount].CalcMax();
         }

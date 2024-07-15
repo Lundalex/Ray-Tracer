@@ -12,6 +12,9 @@ struct Tri
     float3 vA;
     float3 vB;
     float3 vC;
+    float2 uvA;
+    float2 uvB;
+    float2 uvC;
     float3 normal;
     int materialKey;
     int parentKey;
@@ -61,14 +64,16 @@ struct HitInfo
     bool didHit;
     float dst;
     float3 hitPoint;
+    float2 uv;
     float3 normal;
     int materialKey;
 };
-struct TriangleHitInfo
+struct TriHitInfo
 {
     bool didHit;
     float dst;
     float3 hitPoint;
+    float2 uv;
     int triIndex;
 };
 struct BVHitInfo
@@ -102,6 +107,7 @@ HitInfo InitHitInfo()
     hitInfo.didHit = false;
     hitInfo.dst = 1.#INF;
     hitInfo.hitPoint = 0;
+    hitInfo.uv = 0;
     hitInfo.normal = 0;
     hitInfo.materialKey = 0;
 

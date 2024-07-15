@@ -12,6 +12,8 @@ public class Main : MonoBehaviour
     public bool RenderBVs;
     public bool RenderTriObjects;
     public bool BVHEnable;
+    public float CameraMoveSpeed;
+    public float CameraPanSpeed;
     [Header("Debug settings")]
     public bool DebugViewEnable;
     public int DebugMaxTriChecks;
@@ -38,7 +40,6 @@ public class Main : MonoBehaviour
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
-    public ObjectSettings objectSettings;
 
     // Script communication
     [NonSerialized] public bool DoUpdateSettings;
@@ -63,6 +64,8 @@ public class Main : MonoBehaviour
     // Camera data record
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
+
+    public Texture2D testTexture;
 
     private void Start()
     {
@@ -99,7 +102,37 @@ public class Main : MonoBehaviour
         rtShader.SetInt("FrameRand", FrameRand);
         rtShader.SetInt("FrameCount", FrameCount++);
 
+        CameraMovement();
+        CameraPanning();
+
         SetCameraOrientationAndTransform();
+    }
+
+    public void CameraMovement()
+    {
+        Vector3 direction = Vector3.zero;
+
+        if (Input.GetKey(KeyCode.W)) direction += Vector3.forward;
+        if (Input.GetKey(KeyCode.S)) direction -= Vector3.forward;
+        if (Input.GetKey(KeyCode.A)) direction -= Vector3.right;
+        if (Input.GetKey(KeyCode.D)) direction += Vector3.right;
+        if (Input.GetKey(KeyCode.Space)) direction += Vector3.up;
+        if (Input.GetKey(KeyCode.LeftShift)) direction -= Vector3.up;
+
+        direction.Normalize();
+
+        transform.position += CameraMoveSpeed * Time.deltaTime * direction;
+    }
+
+    public void CameraPanning()
+    {
+        if (Input.GetMouseButton(0))
+        {
+            float mouseY = Input.GetAxis("Mouse X") * CameraPanSpeed;
+            float mouseX = Input.GetAxis("Mouse Y") * CameraPanSpeed;
+
+            transform.rotation *= Quaternion.Euler(-mouseY, -mouseX, 0.0f);
+        }
     }
 
     public void SetCameraOrientationAndTransform()
@@ -167,6 +200,11 @@ public class Main : MonoBehaviour
         // Debug overlay
         int[] DebugDataMaxValues = new int[] { DebugMaxTriChecks, DebugMaxBVChecks };
         rtShader.SetInts("DebugDataMaxValues", DebugDataMaxValues);
+
+        // Object Textures
+        int[] texDims = new int[] { testTexture.width, testTexture.height };
+        rtShader.SetInts("TexDims", texDims);
+        rtShader.SetTexture(0, "TestTexture", testTexture);
     }
 
     private void SetData()

@@ -7,6 +7,9 @@ public struct Tri2 : BVHComponent // Triangle
     public float3 vA;
     public float3 vB;
     public float3 vC;
+    public float2 uvA;
+    public float2 uvB;
+    public float2 uvC;
     public float3 min;
     public float3 max;
     public float3 GetMin() => min;
