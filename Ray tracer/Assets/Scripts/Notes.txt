@@ -1,3 +1,5 @@
+ReStir paper: https://cdn.pharr.org/ReSTIR.pdf
+
 shift + option + 8 = {}
 option + 8 = []
 fn + Z = undo
@@ -5,6 +7,9 @@ shift + fn + Z = undo an undo
 shift + fn + 7 = comment out / undo comment out
 option + 7 = |
 170-180 after 5s
+
+
+float3[] candidatesNum = new float3[Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum];
 
 --- SAVE 1 (C#):
 
@@ -381,4 +386,11 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
     if (IterationSettings.y) IterateBVs(hitInfo, ray);
 
     return hitInfo;
+}
+
+
+uint GetRayIndex(uint2 threadIndex, uint rayIndex)
+{
+    uint rayIndex = (Resolution.x * threadIndex.y + threadIndex.x) * RaysPerPixel + rayIndex;
+    return rayIndex;
 }

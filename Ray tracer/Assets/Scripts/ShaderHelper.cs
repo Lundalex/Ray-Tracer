@@ -30,4 +30,10 @@ public class ShaderHelper : MonoBehaviour
         m.rtShader.SetBuffer(0, "SceneObjects", sceneObjectDataBuffer);
         m.rtShader.SetInt("SceneObjectsNum", m.SceneObjectDatas.Length);
     }
+
+    // ReStir
+    public void SetDirCandidateBuffer(ComputeBuffer rayDirCandidateBuffer)
+    {
+        m.rtShader.SetBuffer(0, "RayDirCandidates", rayDirCandidateBuffer);
+    }
 }

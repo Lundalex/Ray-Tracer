@@ -1,0 +1,461 @@
+#pragma kernel TraceRays // 0
+
+#include "RendererResources.hlsl"
+
+// Constants
+const int SpheresNum;
+const int TrisNum;
+const int BVsNum;
+const int MaxBVHDepth;
+const int SceneBVHStartIndex;
+const int SceneObjectsNum;
+const float ScatterProbability;
+
+// Render object iteration settings
+const int4 IterationSettings;
+
+// View settings
+const int2 Resolution;
+const int MaxBounceCount;
+const int RaysPerPixel;
+const float viewSpaceWidth;
+const float viewSpaceHeight;
+const float defocusStrength;
+const float focalPlaneFactor;
+
+// Camera orientation
+const float3 WorldSpaceCameraPos;
+const float3 CameraRotation;
+
+// Camera transform matrix
+const float3x3 CameraTransform;
+
+// Debug
+const int2 DebugDataMaxValues;
+
+// Per frame
+const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
+const int FrameCount; // Each frame: FrameCount++
+
+// Temp tex.
+const uint2 TexDims;
+
+RWStructuredBuffer<Material2> Materials;
+RWStructuredBuffer<Sphere> Spheres;
+RWStructuredBuffer<Tri> Tris;
+RWStructuredBuffer<BoundingVolume> BVs;
+RWStructuredBuffer<SceneObject> SceneObjects;
+
+Texture2D<float4> TestTexture;
+
+RWTexture2D<float4> Result;
+RWTexture2D<float4> DebugOverlay;
+
+float3 ApplyCameraTransform(float3 point2)
+{
+    return mul(CameraTransform, point2);
+}
+
+float TriDstSqr( float3 p, float3 a, float3 b, float3 c )
+{
+  float3 ba = b - a; float3 pa = p - a;
+  float3 cb = c - b; float3 pb = p - b;
+  float3 ac = a - c; float3 pc = p - c;
+  float3 nor = cross( ba, ac );
+
+  return (sign(dot(cross(ba,nor),pa)) +
+         sign(dot(cross(cb,nor),pb)) +
+         sign(dot(cross(ac,nor),pc))<2.0)
+         ?
+         min( min(
+         dot2(ba*clamp(dot(ba,pa)/dot2(ba),0.0,1.0)-pa),
+         dot2(cb*clamp(dot(cb,pb)/dot2(cb),0.0,1.0)-pb) ),
+         dot2(ac*clamp(dot(ac,pc)/dot2(ac),0.0,1.0)-pc) )
+         :
+         dot(nor,pa)*dot(nor,pa)/dot2(nor);
+}
+
+float SphereDst (float3 point2, Sphere sphere)
+{
+    float3 localCentrePos = sphere.pos - point2;
+    float sgnDst = length(localCentrePos) - sphere.radius;
+
+    return sgnDst;
+}
+
+TriHitInfo RayTriangleIntersect(Ray ray, Tri tri)
+{
+    float3 edgeAB = tri.vB - tri.vA;
+    float3 edgeAC = tri.vC - tri.vA;
+    float3 normalVector = cross(edgeAB, edgeAC);
+    float3 ao = ray.pos - tri.vA;
+    float3 dao = cross(ao, ray.dir);
+
+    float determinant = -dot(ray.dir, normalVector);
+    float invDet = 1 / determinant;
+
+    // Calculate dst to triangle & barycentric coordinates of intersection point
+    float dst = dot(ao, normalVector) * invDet;
+    float u = dot(edgeAC, dao) * invDet;
+    float v = -dot(edgeAB, dao) * invDet;
+    float w = 1 - u - v;
+
+    // Initialize hit info
+    TriHitInfo triHitInfo;
+    triHitInfo.didHit = determinant >= 1E-8 && dst >= 0 && u >= 0 && v >= 0 && w >= 0;
+    triHitInfo.hitPoint = ray.pos + ray.dir * dst;
+    triHitInfo.uv = triHitInfo.didHit ? tri.uvA * w + tri.uvB * u + tri.uvC * v : float2(0, 0);
+    triHitInfo.dst = dst;
+    return triHitInfo;
+}
+
+float RayBVIntersect(Ray ray, BoundingVolume bv)
+{
+    float3 tMin = (bv.min - ray.pos) / ray.dir;
+    float3 tMax = (bv.max - ray.pos) / ray.dir;
+    float3 t1 = min(tMin, tMax);
+    float3 t2 = max(tMin, tMax);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
+
+    bool didHit = tFar >= tNear && tFar > 0;
+    float dst = didHit ? tNear > 0 ? tNear : 0 : 1.#INF;
+
+    return dst;
+};
+
+// Iterate functions do not utilize the BVH system, and can thereby be very slow to execute
+void IterateSpheres(inout HitInfo hitInfo, Ray ray)
+{
+    for (int i = 0; i < SpheresNum; i++)
+    {
+        Sphere sphere = Spheres[i];
+        // From the equation: sqrLength(rayPos + rayDir * dst) = radius^2
+        // Solving for dst results in a quadratic equation with coefficients:
+        float3 oc = ray.pos - sphere.pos;
+        float a = dot(ray.dir, ray.dir);
+        float b = 2.0 * dot(oc, ray.dir);
+        float c = dot(oc, oc) - sqr(sphere.radius);
+        float discriminant = b * b - 4.0 * a * c;
+
+        // Validate ray-sphere hit
+        if (discriminant > 0)
+        {
+            float dst = (-b - sqrt(discriminant)) / (2.0 * a);
+            float3 hitPoint = ray.pos + dst * ray.dir;
+
+            // Only render the object in front
+            // Also only render ray hits in the positive ray direction
+            if (dst < hitInfo.dst && 0 <= dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.dst = dst;
+                hitInfo.hitPoint = hitPoint;
+                hitInfo.normal = normalize(hitInfo.hitPoint - sphere.pos); // The tangent is always the same as the sphere radius direction
+                hitInfo.materialKey = sphere.materialKey;
+            }
+        }
+    }
+}
+void IterateTris(inout HitInfo hitInfo, Ray ray)
+{
+    for (int i = 0; i < TrisNum; i++)
+    {
+        Tri tri = Tris[i];
+
+        TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri);
+        
+        if (triHitInfo.didHit)
+        { 
+            if (triHitInfo.dst < hitInfo.dst)
+            {
+                hitInfo.didHit = true;
+                hitInfo.dst = triHitInfo.dst;
+                hitInfo.materialKey = 0;
+                hitInfo.normal = tri.normal;
+            }
+        }
+    }
+}
+void IterateBVs(inout HitInfo hitInfo, Ray ray)
+{
+    for (int i = 0; i < BVsNum; i++)
+    {
+        BoundingVolume bv = BVs[i];
+
+        if (bv.min.x >= 1.#INF) continue;
+
+        float dst = RayBVIntersect(ray, bv);
+        
+        if (dst < hitInfo.dst)
+        {
+            hitInfo.didHit = true;
+            hitInfo.dst = dst;
+            hitInfo.materialKey = 1; // BVs do not have materials
+        }
+    }
+}
+
+void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, int bvStartIndex)
+{
+    int bvStack[MAX_BVH_DEPTH];
+    int stackPointer = 0;
+    bvStack[stackPointer++] = bvStartIndex;
+
+    while (stackPointer > 0)
+    {
+        BoundingVolume bv = BVs[bvStack[--stackPointer]];
+
+        bool isLeaf = bv.childIndexA == -1 && bv.childIndexB == -1;
+        
+        if (isLeaf)
+        {
+            for (int triIndex = bv.componentStart; triIndex < bv.componentStart + bv.totComponents; triIndex++)
+            {
+                Tri tri = Tris[triIndex];
+                TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
+                
+                if (triHitInfo.didHit && triHitInfo.dst < hitInfo.dst)
+                {
+                    hitInfo.didHit = true;
+                    hitInfo.dst = triHitInfo.dst;
+                    hitInfo.hitPoint = triHitInfo.hitPoint;
+                    hitInfo.uv = triHitInfo.uv;
+                    hitInfo.normal = tri.normal;
+                }
+            }
+        }
+        else
+        {
+            float dstA = 1.#INF;
+            float dstB = 1.#INF;
+
+            // If child nodes exist, get the distances to their respective BVs
+            if (bv.childIndexA != -1)
+            {
+                BoundingVolume bvA = BVs[bv.childIndexA];
+                dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            }
+            if (bv.childIndexB != -1)
+            {
+                BoundingVolume bvB = BVs[bv.childIndexB];
+                dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
+            }
+
+            // Push the nearest BV last, to avaluate it first
+            if (dstA < dstB)
+            {
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+            }
+            else
+            {
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+            }
+        }
+    }
+}
+
+void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
+{
+    int bvStack[MAX_BVH_DEPTH];
+    int stackPointer = 0;
+    bvStack[stackPointer++] = SceneBVHStartIndex;
+
+    while (stackPointer > 0)
+    {
+        BoundingVolume bv = BVs[bvStack[--stackPointer]];
+
+        bool isLeaf = bv.childIndexA == -1 && bv.childIndexB == -1;
+        
+        if (isLeaf)
+        {
+            for (int sceneObjectIndex = bv.componentStart; sceneObjectIndex < bv.componentStart + bv.totComponents; sceneObjectIndex++)
+            {
+                SceneObject sceneObject = SceneObjects[sceneObjectIndex];
+
+                Ray localRay;
+                localRay.pos = mul(sceneObject.worldToLocalMatrix, float4(ray.pos, 1)).xyz;
+                localRay.dir = mul(sceneObject.worldToLocalMatrix, float4(ray.dir, 0)).xyz;
+                // localRay.invDir = 1 / localRay.dir; (optimisation to add)
+        
+                HitInfo localHitInfo = InitHitInfo();
+        
+                TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
+        
+                if (localHitInfo.dst < hitInfo.dst)
+                {
+                    hitInfo.didHit = true;
+                    hitInfo.dst = localHitInfo.dst;
+                    hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)).xyz);
+                    hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
+                    hitInfo.uv = localHitInfo.uv;
+                    hitInfo.materialKey = sceneObject.materialKey;
+                }
+            }
+        }
+        else
+        {
+            float dstA = 1.#INF;
+            float dstB = 1.#INF;
+
+            // If child nodes exist, get the distances to their respective BVs
+            if (bv.childIndexA != -1)
+            {
+                BoundingVolume bvA = BVs[bv.childIndexA];
+                dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            }
+            if (bv.childIndexB != -1)
+            {
+                BoundingVolume bvB = BVs[bv.childIndexB];
+                dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
+            }
+
+            // Push the nearest BV last, to avaluate it first
+            if (dstA < dstB)
+            {
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+            }
+            else
+            {
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+            }
+        }
+    }
+}
+
+HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
+{
+    HitInfo hitInfo = InitHitInfo();
+
+    if (IterationSettings.z) TraverseSceneBVH(hitInfo, debugData, ray);
+
+    // May not work!
+    // if (IterationSettings.x) IterateSpheres(hitInfo, ray);
+    // if (IterationSettings.w) IterateTris(hitInfo, ray);
+    // if (IterationSettings.y) IterateBVs(hitInfo, ray);
+
+    return hitInfo;
+}
+
+float3 SampleTexColor(float2 uv)
+{
+    float2 texCoords = int2(uv * TexDims);
+
+    int2 iTexCoords = int2(texCoords);
+    float2 fTexCoords = frac(texCoords);
+
+    int2 texel00 = iTexCoords % TexDims;
+    int2 texel10 = (iTexCoords + int2(1, 0)) % TexDims;
+    int2 texel01 = (iTexCoords + int2(0, 1)) % TexDims;
+    int2 texel11 = (iTexCoords + int2(1, 1)) % TexDims;
+
+    float4 col00 = TestTexture[texel00];
+    float4 col10 = TestTexture[texel10];
+    float4 col01 = TestTexture[texel01];
+    float4 col11 = TestTexture[texel11];
+
+    float4 col0 = lerp(col00, col10, fTexCoords.x);
+    float4 col1 = lerp(col01, col11, fTexCoords.x);
+    float4 col = lerp(col0, col1, fTexCoords.y);
+
+    return col.xyz;
+}
+
+TraceInfo Trace(Ray ray, inout int state, inout DebugData debugData)
+{
+    TraceInfo traceInfo;
+    traceInfo.rayColor = float3(1, 1, 1);
+    traceInfo.incomingLight = float3(0, 0, 0);
+
+    for (int bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++)
+    {
+        HitInfo hitInfo = GetRayCollision(ray, debugData);
+        
+        if (hitInfo.didHit)
+        {
+            Material2 material = Materials[hitInfo.materialKey];
+
+            // Calculate new ray pos
+            ray.pos = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
+
+            // Calculate new ray direction
+            // isSpecularBounce == False -> ray.dir = scatterDir
+            // isSpecularBounce == True -> ray.dir = norm(lerp(scatterDir, specularDir, material.smoothness))
+            bool isSpecularBounce = ScatterProbability < randNormalized(state);
+            // Cosine weighted randPointOnUnitSphere. This removes the need for any "light spread" calculations
+            float3 scatterDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+            float3 specularDir = reflect(ray.dir, hitInfo.normal);
+            ray.dir = normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
+
+            // Validate ray direction
+            if (dot(hitInfo.normal, ray.dir) < 0)
+            {
+                ray.dir = -ray.dir;
+            }
+
+            // Calculate new traceInfo values
+            float3 sampleCol = SampleTexColor(hitInfo.uv); // changed from material.color
+            float3 emittedLight = sampleCol * material.brightness;
+            traceInfo.incomingLight += emittedLight * traceInfo.rayColor;
+            traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return traceInfo;
+}
+
+[numthreads(TN_RT,TN_RT,1)]
+void TraceRays (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
+    DebugData debugData = InitDebugData();
+    int state = id.y * Resolution.x + id.x + FrameRand;
+
+    // Calculate focal plane world pos for the given pixel
+    float focalPosX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
+    float focalPosY = (float(id.y) / Resolution.y - 0.5) * 2.0 * viewSpaceHeight;
+    float3 focalPos = float3(focalPosX, focalPosY, 1) * focalPlaneFactor;
+    float3 worldFocalPos = ApplyCameraTransform(focalPos) + WorldSpaceCameraPos;
+
+    // Trace ray(s) through the scene
+    TraceInfo combinedTraceInfo;
+    for (int i = 0; i < RaysPerPixel; i++)
+    {
+        // Initial ray setup
+        float3 jitter = ApplyCameraTransform(float3(randPointInCircle(state) * defocusStrength, 0));
+        Ray ray;
+        ray.pos = WorldSpaceCameraPos + jitter * focalPlaneFactor;
+        ray.dir = normalize(worldFocalPos - ray.pos);
+
+        // Trace ray
+        TraceInfo traceInfo = Trace(ray, state, debugData);
+
+        // Record traceInfo
+        combinedTraceInfo.rayColor += traceInfo.rayColor;
+        combinedTraceInfo.incomingLight += traceInfo.incomingLight;
+    }
+    combinedTraceInfo.rayColor /= float(RaysPerPixel);
+    combinedTraceInfo.incomingLight /= float(RaysPerPixel);
+
+    // Combine prev frame with current frame. Weight the contributions to result in an average over all frames.
+    float3 col = combinedTraceInfo.incomingLight;
+    float3 colPrev = Result[id.xy].xyz;
+
+    float weight = 1.0 / (FrameCount + 1);
+
+    float3 accumulatedCol = saturate(colPrev * (1 - weight) + col * weight);
+
+    Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
+    // Result[id.xy] = float4(col.x, col.y, col.z, 0);
+    float2 weightedDebugDataMaxValues = RaysPerPixel * DebugDataMaxValues;
+    bool badMaxBVHDepth = MaxBVHDepth >= MAX_BVH_DEPTH;
+    DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, badMaxBVHDepth, 0);
+}

@@ -34,7 +34,8 @@ struct SceneObject
     float4x4 localToWorldMatrix;
     int materialKey;
     int bvStartIndex;
-    int MaxDepthBVH;
+    int maxDepthBVH;
+    float areaApprox;
     float3 min;
     float3 max;
 };
@@ -85,12 +86,29 @@ struct TraceInfo
 {
     float3 rayColor;
     float3 incomingLight;
+    float3 firstHitPoint;
+};
+struct Reservoir
+{
+    int chosenIndex;
+    float chosenWeight;
+    float totWeights;
 };
 struct DebugData
 {
     int triChecks;
     int bvChecks;
 };
+
+Reservoir InitReservoir(int firstElementIndex, float firstElementWeight)
+{
+    Reservoir reservoir;
+    reservoir.chosenIndex = firstElementIndex;
+    reservoir.chosenWeight = firstElementWeight;
+    reservoir.totWeights = firstElementWeight;
+
+    return reservoir;
+}
 
 Ray InitRay()
 {

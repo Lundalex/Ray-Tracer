@@ -278,12 +278,38 @@ public class MeshHelper : MonoBehaviour
         return (newBoundingVolumes.Length, newTris.Length);
     }
 
+    private float GetEmittance(GameObject sceneObject)
+    {
+        SceneObjectSettings sceneObjectSettings = sceneObject.GetComponentInChildren<SceneObjectSettings>();
+        int materialKey = sceneObjectSettings.MaterialKey;
+        float brightness = m.Material2s[materialKey].brightness;
+        return brightness;
+    }
+
+    private int SortByEmittance(ref GameObject[] sceneObject)
+    {
+        System.Array.Sort(sceneObjects, (obj1, obj2) => GetEmittance(obj1).CompareTo(GetEmittance(obj2)));
+
+        int emittingObjectsCount = 0;
+        foreach (var obj in sceneObjects)
+        {
+            if (GetEmittance(obj) != 0.0f)
+            {
+                emittingObjectsCount++;
+            }
+        }
+
+        return emittingObjectsCount;
+    }
+
     public (BoundingVolume[], Tri[], SceneObjectData[]) CreateSceneObjects()
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
         int[] BVHDepths = new int[sceneObjects.Length + 1];
         BVHDepths[sceneObjects.Length] = MaxDepthSceneBVH;
+        int emittingObjectsNum = SortByEmittance(ref sceneObjects);
+        m.rtShader.SetInt("EmittingObjectsNum", emittingObjectsNum);
 
         // Create all scene objects & triangle BVHs
         for (int i = 0; i < sceneObjects.Length; i++)
@@ -300,10 +326,10 @@ public class MeshHelper : MonoBehaviour
             sceneObjectData.worldToLocalMatrix = Utils.CreateWorldToLocalMatrix(transform.position, transform.rotation.eulerAngles, transform.localScale);
             sceneObjectData.localToWorldMatrix = sceneObjectData.worldToLocalMatrix.inverse;
 
-            // Set material key
+            // Set script settings
             sceneObjectData.materialKey = sceneObjectSettings.MaterialKey;
-            sceneObjectData.MaxDepthBVH = sceneObjectSettings.MaxDepthBVH;
-            BVHDepths[i] = sceneObjectData.MaxDepthBVH;
+            sceneObjectData.maxDepthBVH = sceneObjectSettings.MaxDepthBVH;
+            BVHDepths[i] = sceneObjectData.maxDepthBVH;
 
             // Get mesh index
             int meshIndex = Utils.GetMeshIndex(LoadedMeshes, mesh);
@@ -311,7 +337,7 @@ public class MeshHelper : MonoBehaviour
             {
                 // Load mesh (construct it's BVH) if it has not yet been loaded
                 LoadedMeshes.Add(new(mesh, LoadMesh(mesh), loadedTris.Length, loadedBoundingVolumes.Length));
-                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris, sceneObjectData.MaxDepthBVH);
+                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris, sceneObjectData.maxDepthBVH);
                 meshIndex = LoadedMeshes.Count - 1;
             }
             loadedMeshesLookup[i] = meshIndex;
@@ -332,20 +358,27 @@ public class MeshHelper : MonoBehaviour
         Utils.RemoveFromEndOfArray(ref loadedBoundingVolumes, lastSceneBVHLength);
 
         // Transform tri mesh to global space
+        float totArea = 0.0f;
         for (int i = 0; i < sceneObjects.Length; i++)
         {
             SceneObjectData sceneObjectData = sceneObjectsData[i];
             Tri2[] sceneObjectTris = LoadedMeshes[loadedMeshesLookup[i]].meshTris;
-            float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-            float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
+            float3 minTemplate = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
+            float3 maxTemplate = new float3(float.MinValue, float.MinValue, float.MinValue);
             for (int j = 0; j < sceneObjectTris.Length; j++)
             {
-                sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, min, max);
+                sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, minTemplate, maxTemplate);
             }
 
-            sceneObjectsData[i].min = GetMin(sceneObjectTris);
-            sceneObjectsData[i].max = GetMax(sceneObjectTris);
+            float3 min = GetMin(sceneObjectTris);
+            float3 max = GetMax(sceneObjectTris);
+            float approximatedArea = GetBoxArea(min, max);
+            sceneObjectsData[i].min = min;
+            sceneObjectsData[i].max = max;
+            sceneObjectsData[i].areaApprox = approximatedArea;
+            totArea += approximatedArea;
         }
+        m.rtShader.SetFloat("TotArea", totArea);
 
         float3 sceneMin = GetMin(sceneObjectsData);
         float3 sceneMax = GetMax(sceneObjectsData);

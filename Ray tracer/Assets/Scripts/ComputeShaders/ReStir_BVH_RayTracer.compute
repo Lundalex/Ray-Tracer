@@ -1,4 +1,5 @@
-#pragma kernel TraceRays // 0
+#pragma kernel GenerateCandidates // 0
+// #pragma kernel ChooseCandidates // 0
 
 #include "RendererResources.hlsl"
 
@@ -17,7 +18,7 @@ const int4 IterationSettings;
 // View settings
 const int2 Resolution;
 const int MaxBounceCount;
-const int RaysPerPixel;
+const int RaysPerPixel; // Currectly always set to 1
 const float viewSpaceWidth;
 const float viewSpaceHeight;
 const float defocusStrength;
@@ -40,11 +41,24 @@ const int FrameCount; // Each frame: FrameCount++
 // Temp tex.
 const uint2 TexDims;
 
-RWStructuredBuffer<Material2> Materials;
+// ReStir
+const int SceneObjectCandidatesNum;
+const int TriCandidatesNum;
+const int TotCandidatesNum; // TotCandidatesNum = SceneObjectCandidatesNum * TriCandidatesNum
+const int ChosenCandidatesNum;
+const int EmittingObjectsNum;
+const float TotArea;
+const int SceneObjectReservoirTestsNum;
+const int TriReservoirTestsNum;
+
+RWTexture2D<float4> RayHitPoints;
+RWStructuredBuffer<float3> RayDirCandidates;
+
 RWStructuredBuffer<Sphere> Spheres;
 RWStructuredBuffer<Tri> Tris;
 RWStructuredBuffer<BoundingVolume> BVs;
 RWStructuredBuffer<SceneObject> SceneObjects;
+RWStructuredBuffer<Material2> Materials;
 
 Texture2D<float4> TestTexture;
 
@@ -365,16 +379,102 @@ float3 SampleTexColor(float2 uv)
     return col.xyz;
 }
 
-TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
+int SceneObjectReservoirSample(inout uint state)
+{
+    int firstIndex = randIntSpan(0, EmittingObjectsNum, state);
+    float firstWeight = SceneObjects[firstIndex].areaApprox;
+    Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
+
+    for (int j = 0; j < SceneObjectReservoirTestsNum; j++)
+    {
+        int candidateIndex = randIntSpan(0, EmittingObjectsNum, state);
+        float candidateWeight = SceneObjects[candidateIndex].areaApprox;
+
+        if (weightedRand(candidateWeight, reservoir.totWeights, state))
+        {
+            reservoir.chosenIndex = candidateIndex;
+            reservoir.chosenWeight = candidateWeight;
+        }
+        reservoir.totWeights += candidateWeight;
+    }
+
+    return reservoir.chosenIndex;
+}
+
+int TriReservoirSample(int startTriIndex, int endTriIndex, inout uint state)
+{
+    int firstIndex = randIntSpan(startTriIndex, endTriIndex, state);
+    float firstWeight = GetTriArea(Tris[firstIndex]);
+    Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
+
+    for (int j = 0; j < TriReservoirTestsNum; j++)
+    {
+        int candidateIndex = randIntSpan(startTriIndex, endTriIndex, state);
+        float candidateWeight = GetTriArea(Tris[candidateIndex]);
+
+        if (weightedRand(candidateWeight, reservoir.totWeights, state))
+        {
+            reservoir.chosenIndex = candidateIndex;
+            reservoir.chosenWeight = candidateWeight;
+        }
+        reservoir.totWeights += candidateWeight;
+    }
+
+    return reservoir.chosenIndex;
+}
+
+// For now, BSDFs won't be considered
+void GenerateCandidates(float3 hitNormal, float3 pos, int rayIndex, inout uint state, inout TraceInfo traceInfoTEMP)
+{
+    traceInfoTEMP.firstHitPoint = 0;
+    for (int i = 0; i < SceneObjectCandidatesNum; i++)
+    {
+        int sceneObjectIndex = SceneObjectReservoirSample(state);
+        SceneObject sceneObject = SceneObjects[sceneObjectIndex];
+        BoundingVolume bv = BVs[sceneObject.bvStartIndex];
+        int startTriIndex = bv.componentStart;
+        int endTriIndex = startTriIndex + bv.totComponents;
+
+        for (int j = 0; j < TriCandidatesNum; j++)
+        {
+            int triIndex = TriReservoirSample(startTriIndex, endTriIndex, state);
+            Tri tri = Tris[triIndex];
+            float3 worldPoint = GetRandWorldPointTri(tri, sceneObject.localToWorldMatrix, state);
+
+            float3 dir = normalize(worldPoint - pos);
+
+            int candidateIndex = rayIndex * TotCandidatesNum + i * TriCandidatesNum + j;
+
+            // Validate direction
+            if (dot(hitNormal, dir) < 0)
+            {
+                // If direction is invalid, abandon candidate
+                RayDirCandidates[candidateIndex] = 0;
+                traceInfoTEMP.firstHitPoint = 0;
+                continue;
+            }
+
+            RayDirCandidates[candidateIndex] = dir;
+            traceInfoTEMP.firstHitPoint = (dir + 1) * 0.5;
+        }
+    }
+}
+
+TraceInfo Trace(Ray ray, uint rayIndex, inout DebugData debugData, inout uint state)
 {
     TraceInfo traceInfo;
     traceInfo.rayColor = float3(1, 1, 1);
     traceInfo.incomingLight = float3(0, 0, 0);
 
-    for (int bounceCount = 0; bounceCount < MaxBounceCount; bounceCount++)
+    // Cast first ray
+    HitInfo hitInfo = GetRayCollision(ray, debugData);
+    traceInfo.firstHitPoint = hitInfo.didHit ? hitInfo.hitPoint : float3(0, 0, 0);
+
+    // Use ReStir to generate ray bounce direction candidates
+    if (hitInfo.didHit) GenerateCandidates(hitInfo.normal, traceInfo.firstHitPoint, rayIndex, state, traceInfo);
+
+    for (int bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++)
     {
-        HitInfo hitInfo = GetRayCollision(ray, debugData);
-        
         if (hitInfo.didHit)
         {
             Material2 material = Materials[hitInfo.materialKey];
@@ -407,17 +507,26 @@ TraceInfo Trace (Ray ray, inout int state, inout DebugData debugData)
         {
             break;
         }
+
+        // Recast ray
+        if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
     }
 
     return traceInfo;
 }
 
+uint GetRayBaseIndex(uint2 threadID)
+{
+    uint rayBaseIndex = (Resolution.x * threadID.y + threadID.x) * RaysPerPixel;
+    return rayBaseIndex;
+}
+
 [numthreads(TN_RT,TN_RT,1)]
-void TraceRays (uint3 id : SV_DispatchThreadID)
+void GenerateCandidates (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
     DebugData debugData = InitDebugData();
-    int state = id.y * Resolution.x + id.x + FrameRand;
+    uint state = id.y * Resolution.x + id.x + FrameRand;
 
     // Calculate focal plane world pos for the given pixel
     float focalPosX = (float(id.x) / Resolution.x - 0.5) * 2.0 * viewSpaceWidth;
@@ -426,17 +535,21 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     float3 worldFocalPos = ApplyCameraTransform(focalPos) + WorldSpaceCameraPos;
 
     // Trace ray(s) through the scene
+    uint rayBaseIndex = GetRayBaseIndex(id.xy);
     TraceInfo combinedTraceInfo;
     for (int i = 0; i < RaysPerPixel; i++)
     {
-        // Initial ray setup
-        float3 jitter = ApplyCameraTransform(float3(randPointInCircle(state) * defocusStrength, 0));
+        uint rayIndex = rayBaseIndex; // removed "+ i" to prevent issues if RaysPerPixel != 1
+
+        // Initial ray setup - jitter currently disabled to improve ReStir image quality
+        // float3 jitter = ApplyCameraTransform(float3(randPointInCircle(state) * defocusStrength, 0));
         Ray ray;
-        ray.pos = WorldSpaceCameraPos + jitter * focalPlaneFactor;
+        ray.pos = WorldSpaceCameraPos; //  + jitter * focalPlaneFactor
         ray.dir = normalize(worldFocalPos - ray.pos);
 
         // Trace ray
-        TraceInfo traceInfo = Trace(ray, state, debugData);
+        TraceInfo traceInfo = Trace(ray, rayIndex, debugData, state);
+        combinedTraceInfo.firstHitPoint = traceInfo.firstHitPoint;
 
         // Record traceInfo
         combinedTraceInfo.rayColor += traceInfo.rayColor;
@@ -458,4 +571,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     float2 weightedDebugDataMaxValues = RaysPerPixel * DebugDataMaxValues;
     bool badMaxBVHDepth = MaxBVHDepth >= MAX_BVH_DEPTH;
     DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, badMaxBVHDepth, 0);
+
+    // combinedTraceInfo.firstHitPoint = abs(combinedTraceInfo.firstHitPoint * 0.03); // ReStir wont work if this code is active
+    RayHitPoints[id.xy] = float4(combinedTraceInfo.firstHitPoint.x, combinedTraceInfo.firstHitPoint.y, combinedTraceInfo.firstHitPoint.z, 0);
 }

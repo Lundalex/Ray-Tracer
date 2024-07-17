@@ -73,6 +73,24 @@ float randNormalized(inout uint state)
     return NextRandom(state) / 4294967295.0; // 2^32 - 1
 }
 
+int randIntSpan(int a, int b, inout uint state)
+{
+    float randNorm = randNormalized(state);
+    int diff = b - a;
+    int offset = (int)(diff * randNorm);
+    int result = a + offset;
+    return result;
+}
+
+bool weightedRand(float a, float b, inout uint state)
+{
+    float randNorm = randNormalized(state);
+    
+    float totalWeight = a + b;
+    float relRand = randNorm * totalWeight;
+    return relRand < a;
+}
+
 float randValueNormalDistribution(inout uint state)
 {
     float theta = 2 * PI * randNormalized(state);
@@ -94,4 +112,33 @@ float2 randPointInCircle(inout uint state)
     float angle = randNormalized(state) * 2 * PI;
     float2 pointOnCircle = float2(cos(angle), sin(angle));
     return pointOnCircle * sqrt(randNormalized(state));
+}
+
+float GetTriArea(Tri tri)
+{
+    float3 ab = tri.vB - tri.vA;
+    float3 ac = tri.vC - tri.vA;
+    float3 crossProduct = cross(ab, ac);
+    float area = length(crossProduct) * 0.5;
+    return area;
+}
+
+float3 GetRandWorldPointTri(Tri tri, float4x4 localToWorldMatrix, inout uint state)
+{
+    float r1 = randNormalized(state);
+    float r2 = randNormalized(state);
+
+    if (r1 + r2 > 1.0)
+    {
+        r1 = 1.0 - r1;
+        r2 = 1.0 - r2;
+    }
+
+    float3 translatedVA = mul(localToWorldMatrix, float4(tri.vA, 1)).xyz;
+    float3 translatedVB = mul(localToWorldMatrix, float4(tri.vB, 1)).xyz;
+    float3 translatedVC = mul(localToWorldMatrix, float4(tri.vC, 1)).xyz;
+
+    float3 point_ = translatedVA * (1.0 - r1 - r2) + translatedVB * r1 + translatedVC * r2;
+
+    return point_;
 }

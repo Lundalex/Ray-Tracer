@@ -1,13 +1,14 @@
 using UnityEngine;
 using Unity.Mathematics;
+using System;
 
 // Import utils from Resources.cs
 using Resources;
-using System;
 // Usage: Utils.(functionName)()
 
 public class Main : MonoBehaviour
 {
+    [Header("Primary settings")]
     public bool RenderSpheres;
     public bool RenderBVs;
     public bool RenderTriObjects;
@@ -29,6 +30,12 @@ public class Main : MonoBehaviour
     [Range(0.0f, 2.0f)] public float DefocusStrength;
     public float focalPlaneFactor; // focalPlaneFactor must be positive
     public int FrameCount;
+    [Header("ReStir settings")]
+    public int SceneObjectCandidatesNum;
+    public int TriCandidatesNum;
+    public int ChosenCandidatesNum; // A.k.a. N
+    public int SceneObjectReservoirTestsNum;
+    public int TriReservoirTestsNum;
 
     [Header("Scene objects / Material2s")]
     public float4[] SpheresInput; // xyz: pos; w: radii
@@ -36,7 +43,7 @@ public class Main : MonoBehaviour
     public float4[] MatTypesInput2; // x: smoothness
 
     [Header("References")]
-    public ComputeShader rtShader;
+    public ComputeShader rtShader; // Either BVH only or BVH + ReStir
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
@@ -46,8 +53,8 @@ public class Main : MonoBehaviour
     [NonSerialized] public bool ProgramStarted = false;
 
     // Private variables
-    private RenderTexture rtResultTexture;
-    private RenderTexture debugOverlayTexture;
+    private RenderTexture RTResultTexture;
+    private RenderTexture DebugOverlayTexture;
     private int RayTracerThreadSize = 8; // /32
     private int PreCalcThreadSize = 16; // /32
     public Sphere[] Spheres;
@@ -61,6 +68,12 @@ public class Main : MonoBehaviour
     private ComputeBuffer SceneObjectDataBuffer;
     private ComputeBuffer MaterialBuffer;
 
+    // ReStir
+    private ComputeBuffer RayDirCandidateBuffer;
+    private RenderTexture RayHitPointTexture;
+    private string ReStirShaderName = "ReStir_BVH_RayTracer";
+    private bool ReStirShaderEnabled;
+
     // Camera data record
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
@@ -71,6 +84,13 @@ public class Main : MonoBehaviour
     {
         lastCameraPosition = transform.position;
         lastCameraRotation = transform.rotation;
+
+        ReStirShaderEnabled = rtShader.name == ReStirShaderName;
+        if (ReStirShaderEnabled && RaysPerPixel != 1)
+        {
+            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
+            RaysPerPixel = 1;
+        }
 
         UpdatePerFrame();
         UpdateSettings();
@@ -83,6 +103,9 @@ public class Main : MonoBehaviour
         UpdatePerFrame();
 
         if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
+
+        // float3[] candidates = new float3[Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum];
+        // RayDirCandidateBuffer.GetData(candidates);
     }
 
     private void LateUpdate()
@@ -201,6 +224,18 @@ public class Main : MonoBehaviour
         int[] DebugDataMaxValues = new int[] { DebugMaxTriChecks, DebugMaxBVChecks };
         rtShader.SetInts("DebugDataMaxValues", DebugDataMaxValues);
 
+        // ReStir
+        if (ReStirShaderEnabled)
+        {
+            rtShader.SetInt("SceneObjectCandidatesNum", SceneObjectCandidatesNum);
+            rtShader.SetInt("TriCandidatesNum", TriCandidatesNum);
+            rtShader.SetInt("TotCandidatesNum", SceneObjectCandidatesNum * TriCandidatesNum);
+            rtShader.SetInt("ChosenCandidatesNum", ChosenCandidatesNum);
+            rtShader.SetInt("SceneObjectReservoirTestsNum", SceneObjectReservoirTestsNum);
+            rtShader.SetInt("TriReservoirTestsNum", TriReservoirTestsNum);
+
+        }
+
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
         rtShader.SetInts("TexDims", texDims);
@@ -256,6 +291,9 @@ public class Main : MonoBehaviour
         SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
         shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
 
+        // ReStir
+        RayDirCandidateBuffer = ComputeHelper.CreateStructuredBuffer<float3>(Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum);
+        shaderHelper.SetDirCandidateBuffer(RayDirCandidateBuffer);
     }
 
     private void RunPreCalcShader()
@@ -266,40 +304,99 @@ public class Main : MonoBehaviour
     private void RunRenderShader()
     {
         // Ray tracer result texture
-        if (rtResultTexture == null)
+        if (RTResultTexture == null)
         {
-            rtResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+            RTResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
             {
                 enableRandomWrite = true
             };
-            rtResultTexture.Create();
-            rtShader.SetTexture(0, "Result", rtResultTexture);
-        }
-        // Debug overlay texture
-        if (debugOverlayTexture == null)
-        {
-            debugOverlayTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
-            {
-                enableRandomWrite = true
-            };
-            debugOverlayTexture.Create();
-            rtShader.SetTexture(0, "DebugOverlay", debugOverlayTexture);
+            RTResultTexture.Create();
+            rtShader.SetTexture(0, "Result", RTResultTexture);
         }
 
-        ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
+        // Debug overlay texture
+        if (DebugOverlayTexture == null)
+        {
+            DebugOverlayTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+            {
+                enableRandomWrite = true
+            };
+            DebugOverlayTexture.Create();
+            rtShader.SetTexture(0, "DebugOverlay", DebugOverlayTexture);
+        }
+
+        // ReStir
+        if (ReStirShaderEnabled)
+        {
+            if (RayHitPointTexture == null)
+            {
+                RayHitPointTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+                {
+                    enableRandomWrite = true
+                };
+                RayHitPointTexture.Create();
+                rtShader.SetTexture(0, "RayHitPoints", RayHitPointTexture);
+            }
+        }
+
+        ComputeHelper.DispatchKernel(rtShader, "GenerateCandidates", Resolution, RayTracerThreadSize);
     }
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
         RunRenderShader();
 
-        Graphics.Blit(DebugViewEnable ? debugOverlayTexture : rtResultTexture, dest);
+        Graphics.Blit(DebugViewEnable ? RayHitPointTexture : RTResultTexture, dest); // DebugOverlayTexture 
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, MaterialBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, MaterialBuffer, RayDirCandidateBuffer };
 
     private void OnDestroy()
     {
         ComputeHelper.Release(AllBuffers());
+    }
+
+    // --- Test ---
+
+    bool WeightedRand(float weightA, float weightB)
+    {
+        float totalWeight = weightA + weightB;
+        float randValue = UnityEngine.Random.value * totalWeight;
+
+        return randValue < weightA;
+    }
+    void ReservoirSamplingTest()
+    {
+        float[] inputArr = new float[] { 3.2f, 9.5f, 8.4f, 5.3f, 233.0f, 7.7f, 5.1f };
+        (int chosenIndex, float chosenWeight, float totWeights) reservoir = new(-1, 0, 0);
+
+        for (int i = 0; i < inputArr.Length; i++)
+        {
+            float candidateWeight = inputArr[i];
+
+            bool doReplace = WeightedRand(candidateWeight, reservoir.totWeights);
+            if (doReplace)
+            {
+                reservoir.chosenIndex = i;
+                reservoir.chosenWeight = candidateWeight;
+            }
+            reservoir.totWeights += candidateWeight;
+        }
+        Debug.Log(reservoir);
+    }
+
+    void GetPixelsFromTexture()
+    {
+        // Create a new Texture2D with the same dimensions and format as the RenderTexture
+        Texture2D tex = new Texture2D(RayHitPointTexture.width, RayHitPointTexture.height, TextureFormat.RGBA32, false);
+
+        // Set the RenderTexture as the active render target
+        RenderTexture.active = RayHitPointTexture;
+
+        // Read the RenderTexture into the Texture2D
+        tex.ReadPixels(new Rect(0, 0, RayHitPointTexture.width, RayHitPointTexture.height), 0, 0);
+        tex.Apply();
+
+        Color[] pixels = tex.GetPixels();
     }
 }

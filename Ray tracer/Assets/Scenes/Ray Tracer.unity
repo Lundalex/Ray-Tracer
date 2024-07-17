@@ -123,6 +123,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &1213090713 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2590642388382468085, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+  m_PrefabInstance: {fileID: 2095872760}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1238442919
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -301,19 +306,24 @@ MonoBehaviour:
   BVHEnable: 1
   CameraMoveSpeed: 5
   CameraPanSpeed: 5
-  DebugViewEnable: 0
+  DebugViewEnable: 1
   DebugMaxTriChecks: 100
   DebugMaxBVChecks: 100
   fieldOfView: 70
   Resolution:
     x: 1920
     y: 1080
-  MaxBounceCount: 2
+  MaxBounceCount: 1
   RaysPerPixel: 1
   ScatterProbability: 0.9
   DefocusStrength: 0
   focalPlaneFactor: 16.7
   FrameCount: 0
+  SceneObjectCandidatesNum: 3
+  TriCandidatesNum: 4
+  ChosenCandidatesNum: 1
+  SceneObjectReservoirTestsNum: 3
+  TriReservoirTestsNum: 0
   SpheresInput:
   - x: -10
     y: 1
@@ -323,7 +333,7 @@ MonoBehaviour:
   - x: 0
     y: 1
     z: 0
-    w: 0.03
+    w: 1
   - x: 1
     y: 1
     z: 1
@@ -337,7 +347,7 @@ MonoBehaviour:
     y: 0
     z: 0
     w: 0
-  rtShader: {fileID: 7200000, guid: 96721caf6d7a30541a45491bb6102c23, type: 3}
+  rtShader: {fileID: 7200000, guid: 7606d5fb8e6c542bba823cfe2e8074c2, type: 3}
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
   shaderHelper: {fileID: 1356186230}
   meshHelper: {fileID: 1356186231}
@@ -370,6 +380,8 @@ MonoBehaviour:
   sceneObjects:
   - {fileID: 1430624125}
   - {fileID: 1707828470}
+  - {fileID: 1740729473}
+  - {fileID: 1213090713}
   MaxDepthSceneBVH: 10
   SplitResolution: 5
   doReloadSceneBVH: 1
@@ -444,9 +456,13 @@ PrefabInstance:
       value: Dragon8k
       objectReference: {fileID: 0}
     - target: {fileID: 9003204481926909031, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9003204481926909031, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+      objectReference: {fileID: -3033667219593020291, guid: d4fb84c7276de4d3a8c1c800329d5bf8, type: 3}
     - target: {fileID: 9189337742774499530, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: MaterialKey
       value: 0
@@ -464,6 +480,11 @@ PrefabInstance:
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2590642388382468085, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
   m_PrefabInstance: {fileID: 1707828469}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &1740729473 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6541027715856167117, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+  m_PrefabInstance: {fileID: 1238442919}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &2095872760
 PrefabInstance:
