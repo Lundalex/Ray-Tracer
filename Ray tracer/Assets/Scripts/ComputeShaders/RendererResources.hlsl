@@ -128,17 +128,16 @@ float3 GetRandWorldPointTri(Tri tri, float4x4 localToWorldMatrix, inout uint sta
     float r1 = randNormalized(state);
     float r2 = randNormalized(state);
 
+    // Ensure the point lies within the triangle
     if (r1 + r2 > 1.0)
     {
         r1 = 1.0 - r1;
         r2 = 1.0 - r2;
     }
 
-    float3 translatedVA = mul(localToWorldMatrix, float4(tri.vA, 1)).xyz;
-    float3 translatedVB = mul(localToWorldMatrix, float4(tri.vB, 1)).xyz;
-    float3 translatedVC = mul(localToWorldMatrix, float4(tri.vC, 1)).xyz;
+    float3 localPoint = tri.vA * (1.0 - r1 - r2) + tri.vB * r1 + tri.vC * r2;
 
-    float3 point_ = translatedVA * (1.0 - r1 - r2) + translatedVB * r1 + translatedVC * r2;
+    float3 worldPoint = mul(localToWorldMatrix, float4(localPoint, 1.0)).xyz;
 
-    return point_;
+    return worldPoint;
 }

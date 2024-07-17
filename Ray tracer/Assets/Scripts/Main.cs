@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Mathematics;
 using System;
+using System.Diagnostics;
 
 // Import utils from Resources.cs
 using Resources;
@@ -33,9 +34,9 @@ public class Main : MonoBehaviour
     [Header("ReStir settings")]
     public int SceneObjectCandidatesNum;
     public int TriCandidatesNum;
-    public int ChosenCandidatesNum; // A.k.a. N
     public int SceneObjectReservoirTestsNum;
     public int TriReservoirTestsNum;
+    public int CandidateReservoirTestsNum;
 
     [Header("Scene objects / Material2s")]
     public float4[] SpheresInput; // xyz: pos; w: radii
@@ -61,15 +62,18 @@ public class Main : MonoBehaviour
     public Material2[] Material2s;
     public Tri[] Tris;
     public SceneObjectData[] SceneObjectDatas;
+    public LightObject[] LightObjects;
     public BoundingVolume[] BVs;
     private ComputeBuffer SphereBuffer;
     private ComputeBuffer BVBuffer;
     private ComputeBuffer TriBuffer;
     private ComputeBuffer SceneObjectDataBuffer;
+    private ComputeBuffer LightObjectBuffer;
     private ComputeBuffer MaterialBuffer;
 
     // ReStir
-    private ComputeBuffer RayDirCandidateBuffer;
+    private ComputeBuffer CandidateBuffer;
+    private ComputeBuffer HitInfoBuffer;
     private RenderTexture RayHitPointTexture;
     private string ReStirShaderName = "ReStir_BVH_RayTracer";
     private bool ReStirShaderEnabled;
@@ -88,7 +92,7 @@ public class Main : MonoBehaviour
         ReStirShaderEnabled = rtShader.name == ReStirShaderName;
         if (ReStirShaderEnabled && RaysPerPixel != 1)
         {
-            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
+            UnityEngine.Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
             RaysPerPixel = 1;
         }
 
@@ -105,7 +109,7 @@ public class Main : MonoBehaviour
         if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
 
         // float3[] candidates = new float3[Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum];
-        // RayDirCandidateBuffer.GetData(candidates);
+        // CandidateDirectionBuffer.GetData(candidates);
     }
 
     private void LateUpdate()
@@ -230,16 +234,18 @@ public class Main : MonoBehaviour
             rtShader.SetInt("SceneObjectCandidatesNum", SceneObjectCandidatesNum);
             rtShader.SetInt("TriCandidatesNum", TriCandidatesNum);
             rtShader.SetInt("TotCandidatesNum", SceneObjectCandidatesNum * TriCandidatesNum);
-            rtShader.SetInt("ChosenCandidatesNum", ChosenCandidatesNum);
             rtShader.SetInt("SceneObjectReservoirTestsNum", SceneObjectReservoirTestsNum);
             rtShader.SetInt("TriReservoirTestsNum", TriReservoirTestsNum);
+            rtShader.SetInt("CandidateReservoirTestsNum", CandidateReservoirTestsNum);
 
         }
 
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
         rtShader.SetInts("TexDims", texDims);
-        rtShader.SetTexture(0, "TestTexture", testTexture);
+        rtShader.SetTexture(1, "TestTexture", testTexture);
+
+        UnityEngine.Debug.Log("Internal program settings updated");
     }
 
     private void SetData()
@@ -276,7 +282,7 @@ public class Main : MonoBehaviour
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
         // Construct BVHEnable(s)
-        (BVs, Tris, SceneObjectDatas) = meshHelper.CreateSceneObjects();
+        (BVs, Tris, SceneObjectDatas, LightObjects) = meshHelper.CreateSceneObjects();
         
         // Set BVHEnable data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
@@ -291,9 +297,18 @@ public class Main : MonoBehaviour
         SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
         shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
 
+        // Set LightObjects data
+        LightObjectBuffer = ComputeHelper.CreateStructuredBuffer<LightObject>(LightObjects);
+        shaderHelper.SetLightObjectBuffer(LightObjectBuffer);
+
         // ReStir
-        RayDirCandidateBuffer = ComputeHelper.CreateStructuredBuffer<float3>(Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum);
-        shaderHelper.SetDirCandidateBuffer(RayDirCandidateBuffer);
+        if (ReStirShaderEnabled)
+        {
+            CandidateBuffer = ComputeHelper.CreateStructuredBuffer<float4>(Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum);
+            shaderHelper.SetCandidateBuffer(CandidateBuffer);
+            HitInfoBuffer = ComputeHelper.CreateStructuredBuffer<HitInfo>(Resolution.x * Resolution.y);
+            shaderHelper.SetHitInfoBuffer(HitInfoBuffer);
+        }
     }
 
     private void RunPreCalcShader()
@@ -311,7 +326,7 @@ public class Main : MonoBehaviour
                 enableRandomWrite = true
             };
             RTResultTexture.Create();
-            rtShader.SetTexture(0, "Result", RTResultTexture);
+            rtShader.SetTexture(1, "Result", RTResultTexture);
         }
 
         // Debug overlay texture
@@ -340,16 +355,17 @@ public class Main : MonoBehaviour
         }
 
         ComputeHelper.DispatchKernel(rtShader, "GenerateCandidates", Resolution, RayTracerThreadSize);
+        ComputeHelper.DispatchKernel(rtShader, "ContinueTracing", Resolution, RayTracerThreadSize);
     }
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
         RunRenderShader();
 
-        Graphics.Blit(DebugViewEnable ? RayHitPointTexture : RTResultTexture, dest); // DebugOverlayTexture 
+        Graphics.Blit(DebugViewEnable ? DebugOverlayTexture : RTResultTexture, dest); // RayHitPointTexture 
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, MaterialBuffer, RayDirCandidateBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, HitInfoBuffer };
 
     private void OnDestroy()
     {
@@ -382,7 +398,7 @@ public class Main : MonoBehaviour
             }
             reservoir.totWeights += candidateWeight;
         }
-        Debug.Log(reservoir);
+        UnityEngine.Debug.Log(reservoir);
     }
 
     void GetPixelsFromTexture()

@@ -39,6 +39,14 @@ struct SceneObject
     float3 min;
     float3 max;
 };
+struct LightObject
+{
+    float4x4 localToWorldMatrix;
+    float areaApprox;
+    float brightness;
+    int triStart;
+    int totTris;
+};
 struct Sphere
 {
     float3 pos;
@@ -62,7 +70,6 @@ struct Ray
 };
 struct HitInfo
 {
-    bool didHit;
     float dst;
     float3 hitPoint;
     float2 uv;
@@ -122,9 +129,8 @@ Ray InitRay()
 HitInfo InitHitInfo()
 {
     HitInfo hitInfo;
-    hitInfo.didHit = false;
     hitInfo.dst = 1.#INF;
-    hitInfo.hitPoint = 0;
+    hitInfo.hitPoint = -1;
     hitInfo.uv = 0;
     hitInfo.normal = 0;
     hitInfo.materialKey = 0;

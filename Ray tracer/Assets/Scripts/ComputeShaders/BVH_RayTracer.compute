@@ -1,4 +1,4 @@
-#pragma kernel TraceRays // 0
+#pragma kernel GenerateCandidates // 0
 
 #include "RendererResources.hlsl"
 
@@ -148,7 +148,6 @@ void IterateSpheres(inout HitInfo hitInfo, Ray ray)
             // Also only render ray hits in the positive ray direction
             if (dst < hitInfo.dst && 0 <= dst)
             {
-                hitInfo.didHit = true;
                 hitInfo.dst = dst;
                 hitInfo.hitPoint = hitPoint;
                 hitInfo.normal = normalize(hitInfo.hitPoint - sphere.pos); // The tangent is always the same as the sphere radius direction
@@ -169,7 +168,6 @@ void IterateTris(inout HitInfo hitInfo, Ray ray)
         { 
             if (triHitInfo.dst < hitInfo.dst)
             {
-                hitInfo.didHit = true;
                 hitInfo.dst = triHitInfo.dst;
                 hitInfo.materialKey = 0;
                 hitInfo.normal = tri.normal;
@@ -189,7 +187,6 @@ void IterateBVs(inout HitInfo hitInfo, Ray ray)
         
         if (dst < hitInfo.dst)
         {
-            hitInfo.didHit = true;
             hitInfo.dst = dst;
             hitInfo.materialKey = 1; // BVs do not have materials
         }
@@ -217,7 +214,6 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
                 
                 if (triHitInfo.didHit && triHitInfo.dst < hitInfo.dst)
                 {
-                    hitInfo.didHit = true;
                     hitInfo.dst = triHitInfo.dst;
                     hitInfo.hitPoint = triHitInfo.hitPoint;
                     hitInfo.uv = triHitInfo.uv;
@@ -286,7 +282,6 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
         
                 if (localHitInfo.dst < hitInfo.dst)
                 {
-                    hitInfo.didHit = true;
                     hitInfo.dst = localHitInfo.dst;
                     hitInfo.normal = normalize(mul(sceneObject.localToWorldMatrix, float4(localHitInfo.normal, 0)).xyz);
                     hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
@@ -375,7 +370,7 @@ TraceInfo Trace(Ray ray, inout int state, inout DebugData debugData)
     {
         HitInfo hitInfo = GetRayCollision(ray, debugData);
         
-        if (hitInfo.didHit)
+        if (hitInfo.dst != 1.#INF)
         {
             Material2 material = Materials[hitInfo.materialKey];
 
@@ -413,7 +408,7 @@ TraceInfo Trace(Ray ray, inout int state, inout DebugData debugData)
 }
 
 [numthreads(TN_RT,TN_RT,1)]
-void TraceRays (uint3 id : SV_DispatchThreadID)
+void GenerateCandidates (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
     DebugData debugData = InitDebugData();

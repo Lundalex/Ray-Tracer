@@ -18,6 +18,7 @@ public class MeshHelper : MonoBehaviour
     public Main m;
 
     private SceneObjectData[] sceneObjectsData;
+    private LightObject[] lightObjects;
     private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
     private List<(Mesh mesh, Tri2[] meshTris, int componentStartIndex, int bvStartIndex)> LoadedMeshes = new();
     private Tri[] loadedTris = new Tri[0];
@@ -56,6 +57,12 @@ public class MeshHelper : MonoBehaviour
                 tris[triCount].uvA = UVs[indexA];
                 tris[triCount].uvB = UVs[indexB];
                 tris[triCount].uvC = UVs[indexC];
+            }
+            else // Temp!!!
+            {
+                tris[triCount].uvA = new float2(0.2f, 0.23f);
+                tris[triCount].uvB = new float2(0.5f, 0.43f);
+                tris[triCount].uvC = new float2(0.28f, 0.87f);
             }
             tris[triCount].CalcMin();
             tris[triCount].CalcMax();
@@ -285,11 +292,15 @@ public class MeshHelper : MonoBehaviour
         float brightness = m.Material2s[materialKey].brightness;
         return brightness;
     }
-
-    private int SortByEmittance(ref GameObject[] sceneObject)
+    private float GetEmittance(SceneObjectData sceneObjectData)
     {
-        System.Array.Sort(sceneObjects, (obj1, obj2) => GetEmittance(obj1).CompareTo(GetEmittance(obj2)));
+        int materialKey = sceneObjectData.materialKey;
+        float brightness = m.Material2s[materialKey].brightness;
+        return brightness;
+    }
 
+    private int GetEmittingObjectsNum(GameObject[] sceneObjects)
+    {
         int emittingObjectsCount = 0;
         foreach (var obj in sceneObjects)
         {
@@ -302,14 +313,12 @@ public class MeshHelper : MonoBehaviour
         return emittingObjectsCount;
     }
 
-    public (BoundingVolume[], Tri[], SceneObjectData[]) CreateSceneObjects()
+    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[]) CreateSceneObjects()
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
         int[] BVHDepths = new int[sceneObjects.Length + 1];
         BVHDepths[sceneObjects.Length] = MaxDepthSceneBVH;
-        int emittingObjectsNum = SortByEmittance(ref sceneObjects);
-        m.rtShader.SetInt("EmittingObjectsNum", emittingObjectsNum);
 
         // Create all scene objects & triangle BVHs
         for (int i = 0; i < sceneObjects.Length; i++)
@@ -400,6 +409,27 @@ public class MeshHelper : MonoBehaviour
         loadedBoundingVolumes = loadedBoundingVolumes.Concat(newBoundingVolumes).ToArray();
         lastSceneBVHLength = newBoundingVolumes.Length;
 
-        return (loadedBoundingVolumes, loadedTris, sceneObjectsData);
+        // Load light emitting object data
+        int emittingObjectsNum = GetEmittingObjectsNum(sceneObjects);
+        m.rtShader.SetInt("EmittingObjectsNum", emittingObjectsNum);
+        lightObjects = new LightObject[emittingObjectsNum];
+        int lightObjectIndex = 0;
+        foreach (SceneObjectData sceneObjectData in sceneObjectsData)
+        {
+            if (GetEmittance(sceneObjectData) != 0.0f)
+            {
+                LightObject lightObject = new LightObject
+                {
+                    localToWorldMatrix = sceneObjectData.localToWorldMatrix,
+                    areaApprox = sceneObjectData.areaApprox,
+                    brightness = m.Material2s[sceneObjectData.materialKey].brightness,
+                    triStart = loadedBoundingVolumes[sceneObjectData.bvStartIndex].componentStart,
+                    totTris = loadedBoundingVolumes[sceneObjectData.bvStartIndex].totComponents
+                };
+                lightObjects[lightObjectIndex++] = lightObject;
+            }
+        }
+
+        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects);
     }
 }

@@ -1,5 +1,9 @@
 ReStir paper: https://cdn.pharr.org/ReSTIR.pdf
 
+!! LightObjects should be kept at a low triangle count for better performance
+
+! ! ! ! Direct hit objects DO NOT CURRENTLY GIVE OFF LIGHT!!!
+
 shift + option + 8 = {}
 option + 8 = []
 fn + Z = undo
