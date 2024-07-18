@@ -447,11 +447,9 @@ void GenerateCandidates2(float3 hitNormal, float3 pos, int rayIndex, inout uint 
 
             float3 dst = worldPoint - pos;
             float3 dir = normalize(dst);
-            float3 worldTriNormal = normalize(mul(lightObject.localToWorldMatrix, float4(tri.normal, 0)).xyz);
-            float hitAngleDot = dot(worldTriNormal, dir);
 
             int candidateIndex = rayIndex * TotCandidatesNum + i * TriCandidatesNum + j;
-
+            
             // Validate direction
             if (dot(hitNormal, dir) < 0)
             {
@@ -459,6 +457,9 @@ void GenerateCandidates2(float3 hitNormal, float3 pos, int rayIndex, inout uint 
                 Candidates[candidateIndex] = float4(0, 0, 0, 0);
                 continue;
             }
+
+            float3 worldTriNormal = normalize(mul(lightObject.localToWorldMatrix, float4(tri.normal, 0)).xyz);
+            float hitAngleDot = max(dot(worldTriNormal, dir), 0);
             
             Candidates[candidateIndex] = float4(dir, GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness));
         }
@@ -531,7 +532,9 @@ Reservoir CandidateReservoirSample(int startIndex, int endIndex, inout uint stat
     for (int i = 0; i < CandidateReservoirTestsNum; i++)
     {
         int candidateIndex = randIntSpan(startIndex, endIndex, state);
-        float candidateWeight = Candidates[firstIndex].w;
+        float4 candidate = Candidates[firstIndex];
+        if (candidate.w == 0) continue;
+        float candidateWeight = candidate.w;
 
         if (weightedRand(candidateWeight, reservoir.totWeights, state))
         {
@@ -564,10 +567,16 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint 
     TraceInfo traceInfo;
     traceInfo.rayColor = float3(1, 1, 1);
     traceInfo.incomingLight = float3(0, 0, 0);
-
-    for (int bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++)
+    bool firstHitLight = hitInfo.materialKey == 1;
+    if (firstHitLight)
     {
-        if (hitInfo.dst != 1.#INF || all(ray.dir) == 0.0)
+        traceInfo.rayColor = float3(1, 1, 1);
+        traceInfo.incomingLight = float3(1, 1, 1);
+    }
+
+    for (int bounceCount = 0; bounceCount <= 1; bounceCount++) // MaxBounceCount = 1 for direct lighting 
+    {
+        if (hitInfo.dst != 1.#INF && !all(ray.dir) == 0.0)
         {
             Material2 material = Materials[hitInfo.materialKey];
 
@@ -606,7 +615,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint 
         }
 
         // Recast ray
-        if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
+        if (bounceCount != 1) hitInfo = GetRayCollision(ray, debugData);
     }
 
     return traceInfo;
@@ -627,6 +636,20 @@ void ContinueTracing (uint3 id : SV_DispatchThreadID)
     HitInfo hitInfo = HitInfos[id.y * Resolution.x + id.x];
     float4 RISData = RayDirFromCandidates(rayIndex, state);
 
+    if (all(RISData.xyz) == 0)
+    {
+        Material2 material = Materials[hitInfo.materialKey];
+
+        // Calculate new traceInfo values
+        float3 sampleCol = SampleTexColor(hitInfo.uv); // changed from material.color
+        float3 emittedLight = sampleCol * material.brightness;
+        float3 col = emittedLight;
+
+        Result[id.xy] = float4(col, 0);
+        return;
+    }
+
+    // Ray setup
     Ray ray;
     ray.pos = hitInfo.hitPoint;
     ray.dir = RISData.xyz;
@@ -655,10 +678,5 @@ void ContinueTracing (uint3 id : SV_DispatchThreadID)
 
     // Render result color
     // Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
-    Result[id.xy] = float4(col.x, col.y, col.z, 0);
-
-    // // Record debug data
-    // float2 weightedDebugDataMaxValues = RaysPerPixel * DebugDataMaxValues;
-    // bool badMaxBVHDepth = MaxBVHDepth >= MAX_BVH_DEPTH;
-    // DebugOverlay[id.xy] = float4(debugData.triChecks / weightedDebugDataMaxValues.x, debugData.bvChecks / weightedDebugDataMaxValues.y, badMaxBVHDepth, 0);
+    Result[id.xy] = float4(col, 0);
 }
