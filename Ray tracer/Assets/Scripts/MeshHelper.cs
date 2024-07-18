@@ -292,14 +292,14 @@ public class MeshHelper : MonoBehaviour
     private float GetEmittance(GameObject sceneObject)
     {
         SceneObjectSettings sceneObjectSettings = sceneObject.GetComponentInChildren<SceneObjectSettings>();
-        int materialKey = sceneObjectSettings.MaterialKey;
-        float brightness = m.Material2s[materialKey].brightness;
+        int materialIndex = sceneObjectSettings.MaterialIndex;
+        float brightness = m.Material2s[materialIndex].brightness;
         return brightness;
     }
     private float GetEmittance(SceneObjectData sceneObjectData)
     {
-        int materialKey = sceneObjectData.materialKey;
-        float brightness = m.Material2s[materialKey].brightness;
+        int materialIndex = sceneObjectData.materialIndex;
+        float brightness = m.Material2s[materialIndex].brightness;
         return brightness;
     }
 
@@ -340,7 +340,7 @@ public class MeshHelper : MonoBehaviour
             sceneObjectData.localToWorldMatrix = sceneObjectData.worldToLocalMatrix.inverse;
 
             // Set script settings
-            sceneObjectData.materialKey = sceneObjectSettings.MaterialKey;
+            sceneObjectData.materialIndex = sceneObjectSettings.MaterialIndex;
             sceneObjectData.maxDepthBVH = sceneObjectSettings.MaxDepthBVH;
             BVHDepths[i] = sceneObjectData.maxDepthBVH;
 
@@ -430,11 +430,22 @@ public class MeshHelper : MonoBehaviour
                 {
                     localToWorldMatrix = sceneObjectData.localToWorldMatrix,
                     areaApprox = sceneObjectData.areaApprox,
-                    brightness = m.Material2s[sceneObjectData.materialKey].brightness,
+                    brightness = m.Material2s[sceneObjectData.materialIndex].brightness,
                     triStart = loadedComponentDatas[sceneObjectData.bvStartIndex].x,
                     totTris = loadedComponentDatas[sceneObjectData.bvStartIndex].y
                 };
                 lightObjects[lightObjectIndex++] = lightObject;
+            }
+        }
+
+        // Set tri parent indexes
+        for (int i = 0; i < sceneObjectsData.Length; i++)
+        {
+            int triStart = loadedComponentDatas[sceneObjectsData[i].bvStartIndex].x;
+            int totTris = loadedComponentDatas[sceneObjectsData[i].bvStartIndex].y;
+            for (int triIndex = triStart; triIndex < triStart + totTris; triIndex++)
+            {
+                loadedTris[triIndex].parentIndex = i;
             }
         }
 

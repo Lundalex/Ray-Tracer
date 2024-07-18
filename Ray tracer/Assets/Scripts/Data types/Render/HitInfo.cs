@@ -5,5 +5,5 @@ public struct HitInfo
     public float3 hitPoint;
     public float2 uv;
     public float3 normal;
-    public int materialKey;
+    public int materialIndex;
 };

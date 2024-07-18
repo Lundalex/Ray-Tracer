@@ -1,12 +1,5 @@
-// --- Rendered Object Types ---
+// --- Rendered object types ---
 
-struct TriObject
-{
-    int rootIndexBVH;
-    float4x4 worldToLocal;
-    float4x4 localToWorld;
-    int materialKey;
-};
 struct Tri
 {
     float3 vA;
@@ -15,9 +8,8 @@ struct Tri
     float2 uvA;
     float2 uvB;
     float2 uvC;
-    float3 normal;
-    int materialKey;
-    int parentKey;
+    float3 worldNormal;
+    int parentIndex;
 };
 struct BoundingVolume
 {
@@ -30,7 +22,7 @@ struct SceneObject
 {
     float4x4 worldToLocalMatrix;
     float4x4 localToWorldMatrix;
-    int materialKey;
+    int materialIndex;
     int bvStartIndex;
     int maxDepthBVH;
     float areaApprox;
@@ -45,12 +37,6 @@ struct LightObject
     int triStart;
     int totTris;
 };
-struct Sphere
-{
-    float3 pos;
-    float radius;
-    int materialKey;
-};
 struct Material2
 {
     float3 color;
@@ -59,7 +45,7 @@ struct Material2
     float smoothness;
 };
 
-// --- Ray Tracer Structs ---
+// --- Ray tracer structs ---
 
 struct Ray
 {
@@ -72,13 +58,12 @@ struct HitInfo
     float3 hitPoint;
     float2 uv;
     float3 normal;
-    int materialKey;
+    int materialIndex;
 };
 struct TriHitInfo
 {
     bool didHit;
     float dst;
-    float3 hitPoint;
     float2 uv;
     int triIndex;
 };
@@ -100,6 +85,8 @@ struct DebugData
     int bvChecks;
 };
 
+// --- Init functions ---
+
 Reservoir InitReservoir(int firstElementIndex, float firstElementWeight)
 {
     Reservoir reservoir;
@@ -109,7 +96,6 @@ Reservoir InitReservoir(int firstElementIndex, float firstElementWeight)
 
     return reservoir;
 }
-
 Ray InitRay()
 {
     Ray ray;
@@ -118,7 +104,6 @@ Ray InitRay()
 
     return ray;
 }
-
 HitInfo InitHitInfo()
 {
     HitInfo hitInfo;
@@ -126,11 +111,10 @@ HitInfo InitHitInfo()
     hitInfo.hitPoint = -1;
     hitInfo.uv = 0;
     hitInfo.normal = 0;
-    hitInfo.materialKey = 0;
+    hitInfo.materialIndex = 0;
 
     return hitInfo;
 }
-
 DebugData InitDebugData()
 {
     DebugData debugData;

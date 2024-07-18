@@ -9,12 +9,6 @@ public class ShaderHelper : MonoBehaviour
         m.rtShader.SetBuffer(0, "Materials", materialBuffer);
         m.rtShader.SetBuffer(1, "Materials", materialBuffer);
     }
-    public void SetSphereBuffer(ComputeBuffer sphereBuffer)
-    {
-        m.rtShader.SetBuffer(0, "Spheres", sphereBuffer);
-        m.rtShader.SetBuffer(1, "Spheres", sphereBuffer);
-        m.rtShader.SetInt("SpheresNum", m.Spheres.Length);
-    }
     public void SetTriBuffer(ComputeBuffer triBuffer)
     {
         m.rtShader.SetBuffer(0, "Tris", triBuffer);
@@ -34,6 +28,7 @@ public class ShaderHelper : MonoBehaviour
     {
         m.rtShader.SetBuffer(0, "SceneObjects", sceneObjectDataBuffer);
         m.rtShader.SetBuffer(1, "SceneObjects", sceneObjectDataBuffer);
+        m.pcShader.SetBuffer(0, "SceneObjects", sceneObjectDataBuffer);
         m.rtShader.SetInt("SceneObjectsNum", m.SceneObjectDatas.Length);
     }
 

@@ -8,7 +8,7 @@ using Resources;
 // All position and rotation settings for scene objects
 public class SceneObjectSettings : MonoBehaviour
 {
-    public int MaterialKey;
+    public int MaterialIndex;
     public int MaxDepthBVH;
     private Main m;
     private Vector3 lastCameraPosition;

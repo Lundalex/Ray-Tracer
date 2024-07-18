@@ -1,0 +1,559 @@
+#pragma kernel GenerateCandidates // 0
+#pragma kernel TraceRays // 1
+
+#include "RendererResources.hlsl"
+
+// Constants
+const int TrisNum;
+const int BVsNum;
+const int MaxBVHDepth;
+const int SceneBVHStartIndex;
+const int SceneObjectsNum;
+const float ScatterProbability;
+
+// View settings
+const int2 Resolution;
+const int MaxBounceCount;
+const int RaysPerPixel; // Currectly always set to 1
+const float2 ViewSpaceDims;
+const float DefocusStrength;
+const float FocalPlaneFactor;
+
+// Camera orientation and transform
+const float3 WorldSpaceCameraPos;
+const float3x3 CameraTransform;
+
+// Per frame
+const int FrameRand; // "random" value from 0 to 999999, gets reset each frame
+const int FrameCount; // Each frame: FrameCount++
+
+// Debug
+const int2 DebugDataMaxValues;
+
+// Temp tex.
+const uint2 TexDims;
+
+// ReStir
+const int SceneObjectCandidatesNum;
+const int TriCandidatesNum;
+const int TotCandidatesNum; // TotCandidatesNum = SceneObjectCandidatesNum * TriCandidatesNum
+const int EmittingObjectsNum;
+const float TotArea;
+const int SceneObjectReservoirTestsNum;
+const int TriReservoirTestsNum;
+const int CandidateReservoirTestsNum;
+
+RWStructuredBuffer<HitInfo> HitInfos;
+RWStructuredBuffer<float4> Candidates;
+
+StructuredBuffer<Tri> Tris;
+StructuredBuffer<BoundingVolume> BVs;
+StructuredBuffer<SceneObject> SceneObjects;
+StructuredBuffer<LightObject> LightObjects;
+StructuredBuffer<Material2> Materials;
+
+Texture2D<float4> TestTexture;
+
+// Output textures
+RWTexture2D<float4> Result;
+RWTexture2D<float4> DebugOverlay;
+RWTexture2D<float4> RayHitPoints;
+
+float3 ApplyCameraTransform(float3 point2)
+{
+    return mul(CameraTransform, point2);
+}
+
+float TriDstSqr(float3 p, float3 a, float3 b, float3 c )
+{
+  float3 ba = b - a; float3 pa = p - a;
+  float3 cb = c - b; float3 pb = p - b;
+  float3 ac = a - c; float3 pc = p - c;
+  float3 nor = cross( ba, ac );
+
+  return (sign(dot(cross(ba,nor),pa)) +
+         sign(dot(cross(cb,nor),pb)) +
+         sign(dot(cross(ac,nor),pc))<2.0)
+         ?
+         min( min(
+         dot2(ba*clamp(dot(ba,pa)/dot2(ba),0.0,1.0)-pa),
+         dot2(cb*clamp(dot(cb,pb)/dot2(cb),0.0,1.0)-pb) ),
+         dot2(ac*clamp(dot(ac,pc)/dot2(ac),0.0,1.0)-pc) )
+         :
+         dot(nor,pa)*dot(nor,pa)/dot2(nor);
+}
+
+TriHitInfo RayTriangleIntersect(Ray ray, Tri tri)
+{
+    float3 edgeAB = tri.vB - tri.vA;
+    float3 edgeAC = tri.vC - tri.vA;
+    float3 normalVector = cross(edgeAB, edgeAC);
+    float3 ao = ray.pos - tri.vA;
+    float3 dao = cross(ao, ray.dir);
+
+    float determinant = -dot(ray.dir, normalVector);
+    float invDet = 1 / determinant;
+
+    // Calculate dst to triangle & barycentric coordinates of intersection point
+    float dst = dot(ao, normalVector) * invDet;
+    float u = dot(edgeAC, dao) * invDet;
+    float v = -dot(edgeAB, dao) * invDet;
+    float w = 1 - u - v;
+
+    // Initialize hit info
+    TriHitInfo triHitInfo;
+    triHitInfo.didHit = determinant >= 1E-8 && dst >= 0 && u >= 0 && v >= 0 && w >= 0;
+    triHitInfo.uv = triHitInfo.didHit ? tri.uvA * w + tri.uvB * u + tri.uvC * v : float2(0, 0);
+    triHitInfo.dst = dst;
+    return triHitInfo;
+}
+
+float RayBVIntersect(Ray ray, BoundingVolume bv)
+{
+    float3 tMin = (bv.min - ray.pos) / ray.dir;
+    float3 tMax = (bv.max - ray.pos) / ray.dir;
+    float3 t1 = min(tMin, tMax);
+    float3 t2 = max(tMin, tMax);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
+
+    bool didHit = tFar >= tNear && tFar > 0;
+    float dst = didHit ? tNear > 0 ? tNear : 0 : 1.#INF;
+
+    return dst;
+};
+
+void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, int bvStartIndex)
+{
+    int bvStack[MAX_BVH_DEPTH + 1];
+    int stackPointer = 0;
+    bvStack[stackPointer++] = bvStartIndex;
+
+    while (stackPointer > 0)
+    {
+        BoundingVolume bv = BVs[bvStack[--stackPointer]];
+
+        bool isLeaf = bv.indexA >= 0;
+        bv.indexA = abs(bv.indexA);
+        bv.indexB = abs(bv.indexB);
+        
+        if (isLeaf)
+        {
+            for (int triIndex = bv.indexA; triIndex < bv.indexA + bv.indexB; triIndex++)
+            {
+                Tri tri = Tris[triIndex];
+                TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
+                
+                if (triHitInfo.didHit && triHitInfo.dst < hitInfo.dst)
+                {
+                    hitInfo.dst = triHitInfo.dst;
+                    hitInfo.uv = triHitInfo.uv;
+                    hitInfo.normal = tri.worldNormal;
+                }
+            }
+        }
+        else
+        {
+            // Check child BV intersections
+            BoundingVolume bvA = BVs[bv.indexA];
+            float dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            BoundingVolume bvB = BVs[bv.indexB];
+            float dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
+
+            // Push the nearest BV last, to avaluate it first
+            if (dstA < dstB)
+            {
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+            }
+            else
+            {
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+            }
+        }
+    }
+}
+
+void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
+{
+    int bvStack[MAX_BVH_DEPTH + 1];
+    int stackPointer = 0;
+    bvStack[stackPointer++] = SceneBVHStartIndex;
+
+    while (stackPointer > 0)
+    {
+        BoundingVolume bv = BVs[bvStack[--stackPointer]];
+
+        bool isLeaf = bv.indexA >= 0;
+        bv.indexA = abs(bv.indexA);
+        bv.indexB = abs(bv.indexB);
+        
+        if (isLeaf)
+        {
+            for (int sceneObjectIndex = bv.indexA; sceneObjectIndex < bv.indexA + bv.indexB; sceneObjectIndex++)
+            {
+                SceneObject sceneObject = SceneObjects[sceneObjectIndex];
+
+                Ray localRay;
+                localRay.pos = mul(sceneObject.worldToLocalMatrix, float4(ray.pos, 1)).xyz;
+                localRay.dir = mul(sceneObject.worldToLocalMatrix, float4(ray.dir, 0)).xyz;
+                // localRay.invDir = 1 / localRay.dir; (optimisation to add)
+        
+                HitInfo localHitInfo = InitHitInfo();
+        
+                TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
+        
+                if (localHitInfo.dst < hitInfo.dst)
+                {
+                    hitInfo.dst = localHitInfo.dst;
+                    hitInfo.normal = localHitInfo.normal;
+                    hitInfo.hitPoint = ray.pos + ray.dir * hitInfo.dst;
+                    hitInfo.uv = localHitInfo.uv;
+                    hitInfo.materialIndex = sceneObject.materialIndex;
+                }
+            }
+        }
+        else
+        {
+            // Check child BV intersections
+            BoundingVolume bvA = BVs[bv.indexA];
+            float dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            BoundingVolume bvB = BVs[bv.indexB];
+            float dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
+
+            // Push the nearest BV last, to avaluate it first
+            if (dstA < dstB)
+            {
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+            }
+            else
+            {
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+            }
+        }
+    }
+}
+
+HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
+{
+    HitInfo hitInfo = InitHitInfo();
+
+    TraverseSceneBVH(hitInfo, debugData, ray);
+
+    return hitInfo;
+}
+
+float3 SampleTexColor(float2 uv)
+{
+    float2 texCoords = int2(uv * TexDims);
+
+    int2 iTexCoords = int2(texCoords);
+    float2 fTexCoords = frac(texCoords);
+
+    int2 texel00 = iTexCoords % TexDims;
+    int2 texel10 = (iTexCoords + int2(1, 0)) % TexDims;
+    int2 texel01 = (iTexCoords + int2(0, 1)) % TexDims;
+    int2 texel11 = (iTexCoords + int2(1, 1)) % TexDims;
+
+    float4 col00 = TestTexture[texel00];
+    float4 col10 = TestTexture[texel10];
+    float4 col01 = TestTexture[texel01];
+    float4 col11 = TestTexture[texel11];
+
+    float4 col0 = lerp(col00, col10, fTexCoords.x);
+    float4 col1 = lerp(col01, col11, fTexCoords.x);
+    float4 col = lerp(col0, col1, fTexCoords.y);
+
+    return col.xyz;
+}
+
+int SceneObjectReservoirSample(inout uint state)
+{
+    int firstIndex = randIntSpan(0, EmittingObjectsNum, state); // 1 -> EmittingObjectsNum
+    float firstWeight = LightObjects[firstIndex].areaApprox;
+    Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
+
+    for (int i = 0; i < SceneObjectReservoirTestsNum; i++)
+    {
+        int candidateIndex = randIntSpan(0, EmittingObjectsNum, state); // 1 -> EmittingObjectsNum
+        float candidateWeight = LightObjects[candidateIndex].areaApprox;
+
+        if (weightedRand(candidateWeight, reservoir.totWeights, state))
+        {
+            reservoir.chosenIndex = candidateIndex;
+            reservoir.chosenWeight = candidateWeight;
+        }
+        reservoir.totWeights += candidateWeight;
+    }
+
+    return reservoir.chosenIndex;
+}
+
+int TriReservoirSample(int startTriIndex, int endTriIndex, inout uint state)
+{
+    int firstIndex = randIntSpan(startTriIndex, endTriIndex, state);
+    float firstWeight = GetTriArea(Tris[firstIndex]);
+    Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
+
+    for (int i = 0; i < TriReservoirTestsNum; i++)
+    {
+        int candidateIndex = randIntSpan(startTriIndex, endTriIndex, state);
+        float candidateWeight = GetTriArea(Tris[candidateIndex]);
+
+        if (weightedRand(candidateWeight, reservoir.totWeights, state))
+        {
+            reservoir.chosenIndex = candidateIndex;
+            reservoir.chosenWeight = candidateWeight;
+        }
+        reservoir.totWeights += candidateWeight;
+    }
+
+    return reservoir.chosenIndex;
+}
+
+float GenerateCandidateWeight(float sqrDst, float hitAngleDot, float brightness)
+{
+    float BRDF = 1.0;
+    float weight = brightness * BRDF * hitAngleDot / sqrDst;
+
+    return weight;
+}
+
+// For now, BSDFs won't be considered
+void GenerateCandidates2(float3 hitNormal, float3 pos, int rayIndex, inout uint state)
+{
+    for (int i = 0; i < SceneObjectCandidatesNum; i++)
+    {
+        int lightObjectIndex = SceneObjectReservoirSample(state);
+        LightObject lightObject = LightObjects[lightObjectIndex];
+        int startTriIndex = lightObject.triStart;
+        int endTriIndex = lightObject.triStart + lightObject.totTris;
+
+        for (int j = 0; j < TriCandidatesNum; j++)
+        {
+            int triIndex = TriReservoirSample(startTriIndex, endTriIndex, state);
+            Tri tri = Tris[triIndex];
+            float3 worldPoint = GetRandWorldPointTri(tri, lightObject.localToWorldMatrix, state);
+
+            float3 dst = worldPoint - pos;
+            float3 dir = normalize(dst);
+
+            int candidateIndex = rayIndex * TotCandidatesNum + i * TriCandidatesNum + j;
+            
+            // Validate direction
+            if (dot(hitNormal, dir) < 0)
+            {
+                // If direction is invalid, abandon candidate
+                Candidates[candidateIndex] = float4(0, 0, 0, 0);
+                continue;
+            }
+
+            float hitAngleDot = max(dot(tri.worldNormal, dir), 0);
+            
+            Candidates[candidateIndex] = float4(dir, GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness));
+        }
+    }
+}
+
+void InitialTrace(Ray ray, uint rayIndex, uint2 pixelID, inout DebugData debugData, inout uint state)
+{
+    // Cast first ray
+    HitInfo hitInfo = GetRayCollision(ray, debugData);
+    bool didHit = hitInfo.dst != 1.#INF;
+
+    // Use ReStir to generate ray bounce direction candidates
+    if (didHit) GenerateCandidates2(hitInfo.normal, hitInfo.hitPoint, rayIndex, state);
+
+    // Save ray hit info data
+    HitInfos[rayIndex] = hitInfo;
+
+    // Store hit point data for debug purposes
+    float3 firstHit = didHit ? hitInfo.hitPoint : float3(0, 0, 0);
+    RayHitPoints[pixelID] = float4(firstHit, 0);
+}
+
+uint GetRayIndex(uint2 threadID)
+{
+    uint rayBaseIndex = (Resolution.x * threadID.y + threadID.x) * RaysPerPixel;
+    return rayBaseIndex;
+}
+
+[numthreads(TN_RT,TN_RT,1)]
+void GenerateCandidates (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
+    DebugData debugData = InitDebugData();
+    uint state = id.y * Resolution.x + id.x + FrameRand;
+
+    // Calculate focal plane world pos for the given pixel
+    float focalPosX = (float(id.x) / Resolution.x - 0.5) * 2.0 * ViewSpaceDims.x;
+    float focalPosY = (float(id.y) / Resolution.y - 0.5) * 2.0 * ViewSpaceDims.y;
+    float3 focalPos = float3(focalPosX, focalPosY, 1) * FocalPlaneFactor;
+    float3 worldFocalPos = ApplyCameraTransform(focalPos) + WorldSpaceCameraPos;
+
+    // Trace ray(s) through the scene
+    uint rayIndex = GetRayIndex(id.xy);
+    TraceInfo combinedTraceInfo;
+
+    // Ray setup
+    Ray ray;
+    ray.pos = WorldSpaceCameraPos;
+    ray.dir = normalize(worldFocalPos - ray.pos);
+
+    // Trace ray
+    InitialTrace(ray, rayIndex, id.xy, debugData, state);
+
+    // Record debug data
+    bool badMaxBVHDepth = MaxBVHDepth >= MAX_BVH_DEPTH;
+    DebugOverlay[id.xy] = float4(debugData.triChecks / (float)DebugDataMaxValues.x, debugData.bvChecks / (float)DebugDataMaxValues.y, badMaxBVHDepth, 0);
+}
+
+// --- Kernel "TraceRays": ---
+
+Reservoir CandidateReservoirSample(int startIndex, int endIndex, inout uint state)
+{
+    int firstIndex = randIntSpan(startIndex, endIndex, state);
+    float firstWeight = Candidates[firstIndex].w;
+    Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
+
+    for (int i = 0; i < CandidateReservoirTestsNum; i++)
+    {
+        int candidateIndex = randIntSpan(startIndex, endIndex, state);
+        float4 candidate = Candidates[firstIndex];
+        if (candidate.w == 0) continue;
+        float candidateWeight = candidate.w;
+
+        if (weightedRand(candidateWeight, reservoir.totWeights, state))
+        {
+            reservoir.chosenIndex = candidateIndex;
+            reservoir.chosenWeight = candidateWeight;
+        }
+        reservoir.totWeights += candidateWeight;
+    }
+
+    return reservoir;
+}
+
+float4 RayDirFromCandidates(uint rayIndex, inout uint state)
+{
+    int startIndex = rayIndex * TotCandidatesNum; // + i * TriCandidatesNum + j
+    int endIndex = startIndex + TotCandidatesNum;
+
+    Reservoir reservoir = CandidateReservoirSample(startIndex, endIndex, state);
+    float4 chosenCandidate = Candidates[reservoir.chosenIndex];
+    float3 dir = chosenCandidate.xyz;
+    float chosenCandidateWeight = chosenCandidate.w;
+    
+    float correctionWeight = reservoir.totWeights / (CandidateReservoirTestsNum * chosenCandidateWeight);
+
+    return float4(dir, correctionWeight);
+}
+
+TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint state)
+{
+    TraceInfo traceInfo;
+    traceInfo.rayColor = float3(1, 1, 1);
+    traceInfo.incomingLight = float3(0, 0, 0);
+
+    for (int bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++) // MaxBounceCount = 1 for direct lighting 
+    {
+        if ((hitInfo.dst == 1.#INF || all(ray.dir) == 0.0)) break;
+        
+        Material2 material = Materials[hitInfo.materialIndex];
+
+        // Calculate new ray pos
+        ray.pos = hitInfo.hitPoint - hitInfo.normal * 0.001; // epsilon offset
+
+        // Ray direction already decided for first bounce!
+        bool isSpecularBounce = false;
+        if (bounceCount != 0)
+        {
+            // Calculate new ray direction
+            // isSpecularBounce == False -> ray.dir = scatterDir
+            // isSpecularBounce == True -> ray.dir = norm(lerp(scatterDir, specularDir, material.smoothness))
+            isSpecularBounce = ScatterProbability < randNormalized(state);
+            // Cosine weighted randPointOnUnitSphere. This removes the need for any "light spread" calculations
+            float3 scatterDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
+            float3 specularDir = reflect(ray.dir, hitInfo.normal);
+            ray.dir = normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
+
+            // Validate ray direction
+            if (dot(hitInfo.normal, ray.dir) < 0)
+            {
+                ray.dir = -ray.dir;
+            }
+        }
+
+        // Calculate new traceInfo values
+        float3 sampleCol = material.color; // /SampleTexColor(hitInfo.uv)
+        float3 emittedLight = sampleCol * material.brightness;
+        traceInfo.incomingLight += emittedLight * traceInfo.rayColor / sqr(hitInfo.dst);
+        traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
+
+        // Recast ray
+        if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
+    }
+
+    return traceInfo;
+}
+
+[numthreads(TN_RT,TN_RT,1)]
+void TraceRays (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y) { return; }
+    DebugData debugData = InitDebugData(); // Debug data never gets recorded for this kernel
+    uint state = id.y * Resolution.x + id.x + FrameRand;
+
+    // Trace ray(s) through the scene
+    uint rayIndex = GetRayIndex(id.xy); // removed "+ i" to prevent issues if RaysPerPixel != 1
+    TraceInfo combinedTraceInfo;
+
+    // Retrieve stored data
+    HitInfo hitInfo = HitInfos[id.y * Resolution.x + id.x];
+    float4 RISData = RayDirFromCandidates(rayIndex, state);
+
+    // Return no color if initial ray trace missed
+    if (hitInfo.dst == 1.#INF)
+    {
+        Result[id.xy] = float4(0, 0, 0, 0);
+        return;
+    }
+    // Return the emitted light of the first hit object if no further ray direction candidates are found
+    else if (all(RISData.xyz) == 0)
+    {
+        Material2 material = Materials[hitInfo.materialIndex];
+
+        // Calculate new traceInfo values
+        float3 sampleCol = material.color; // /SampleTexColor(hitInfo.uv)
+        float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
+        float3 col = emittedLight;
+
+        Result[id.xy] = float4(col, 0);
+        return;
+    }
+
+    // Ray setup
+    Ray ray;
+    ray.pos = hitInfo.hitPoint;
+    ray.dir = RISData.xyz;
+
+    float correctionWeight = RISData.w * RaysPerPixel;
+
+    for (int i = 0; i < RaysPerPixel; i++)
+    {
+        // Trace ray
+        TraceInfo traceInfo = Trace(ray, hitInfo, debugData, state);
+
+        // Record traceInfo
+        combinedTraceInfo.incomingLight += traceInfo.incomingLight;
+    }
+    combinedTraceInfo.incomingLight /= correctionWeight;
+
+    float3 col = combinedTraceInfo.incomingLight;
+
+    // Record ray tracer result
+    Result[id.xy] = float4(col, 0);
+}

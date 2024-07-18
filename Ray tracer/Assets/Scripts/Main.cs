@@ -1,7 +1,6 @@
 using UnityEngine;
 using Unity.Mathematics;
 using System;
-using System.Diagnostics;
 
 // Import utils from Resources.cs
 using Resources;
@@ -9,11 +8,7 @@ using Resources;
 
 public class Main : MonoBehaviour
 {
-    [Header("Primary settings")]
-    public bool RenderSpheres;
-    public bool RenderBVs;
-    public bool RenderTriObjects;
-    public bool BVHEnable;
+    [Header("Camera interaction settings")]
     public float CameraMoveSpeed;
     public float CameraPanSpeed;
     [Header("Debug settings")]
@@ -24,12 +19,12 @@ public class Main : MonoBehaviour
     public float fieldOfView;
     public int2 Resolution;
 
-    [Header("RT settings")]
+    [Header("Ray tracer settings")]
     public int MaxBounceCount;
     public int RaysPerPixel;
     [Range(0.0f, 1.0f)] public float ScatterProbability;
     [Range(0.0f, 2.0f)] public float DefocusStrength;
-    public float focalPlaneFactor; // focalPlaneFactor must be positive
+    public float FocalPlaneFactor; // FocalPlaneFactor must be positive
     public int FrameCount;
     [Header("ReStir settings")]
     public int SceneObjectCandidatesNum;
@@ -38,8 +33,7 @@ public class Main : MonoBehaviour
     public int TriReservoirTestsNum;
     public int CandidateReservoirTestsNum;
 
-    [Header("Scene objects / Material2s")]
-    public float4[] SpheresInput; // xyz: pos; w: radii
+    [Header("Material settings")]
     public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
     public float4[] MatTypesInput2; // x: smoothness
 
@@ -61,13 +55,11 @@ public class Main : MonoBehaviour
     private int RayTracerThreadSize = 8; // /32
     private int PostProcesserThreadSize = 8; // /32
     private int PreCalcThreadSize = 256;
-    public Sphere[] Spheres;
     public Material2[] Material2s;
     public Tri[] Tris;
     public SceneObjectData[] SceneObjectDatas;
     public LightObject[] LightObjects;
     public BoundingVolume[] BVs;
-    private ComputeBuffer SphereBuffer;
     private ComputeBuffer BVBuffer;
     private ComputeBuffer TriBuffer;
     private ComputeBuffer SceneObjectDataBuffer;
@@ -78,12 +70,17 @@ public class Main : MonoBehaviour
     private ComputeBuffer CandidateBuffer;
     private ComputeBuffer HitInfoBuffer;
     private RenderTexture RayHitPointTexture;
-    private string ReStirShaderName = "ReStir_BVH_RayTracer";
+    private string RISShaderName = "RIS_BVH_RayTracer";
     private bool ReStirShaderEnabled;
 
     // Camera data record
     private Vector3 lastCameraPosition;
     private Quaternion lastCameraRotation;
+
+    // Script-specific variables
+    private bool ProgramPaused = false;
+    private bool FrameStep = false;
+    private bool RenderThisFrame = true;
 
     public Texture2D testTexture;
 
@@ -92,10 +89,10 @@ public class Main : MonoBehaviour
         lastCameraPosition = transform.position;
         lastCameraRotation = transform.rotation;
 
-        ReStirShaderEnabled = rtShader.name == ReStirShaderName;
+        ReStirShaderEnabled = rtShader.name == RISShaderName;
         if (ReStirShaderEnabled && RaysPerPixel != 1)
         {
-            UnityEngine.Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
+            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
             RaysPerPixel = 1;
         }
 
@@ -107,12 +104,19 @@ public class Main : MonoBehaviour
 
     private void Update()
     {
-        UpdatePerFrame();
+        PauseControls();
 
-        if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
+        if (ProgramPaused && FrameStep) Debug.Log("Stepped forward 1 frame");
+        if (!ProgramPaused || (ProgramPaused && FrameStep))
+        {
+            RenderThisFrame = true;
+            FrameStep = false;
 
-        // float3[] candidates = new float3[Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum];
-        // CandidateDirectionBuffer.GetData(candidates);
+            UpdatePerFrame();
+
+            if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
+        }
+        else RenderThisFrame = false;
     }
 
     private void LateUpdate()
@@ -129,17 +133,17 @@ public class Main : MonoBehaviour
     {
         // Frame set variables
         int FrameRand = UnityEngine.Random.Range(0, 999999);
-        FrameCount++;
         rtShader.SetInt("FrameRand", FrameRand);
         rtShader.SetInt("FrameCount", FrameCount);
         ppShader.SetInt("FrameCount", FrameCount);
+        FrameCount++;
         CameraMovement();
         CameraPanning();
 
         SetCameraOrientationAndTransform();
     }
 
-    public void CameraMovement()
+    private void CameraMovement()
     {
         Vector3 direction = Vector3.zero;
 
@@ -155,7 +159,17 @@ public class Main : MonoBehaviour
         transform.position += CameraMoveSpeed * Time.deltaTime * direction;
     }
 
-    public void CameraPanning()
+    private void PauseControls()
+    {
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            ProgramPaused = !ProgramPaused;
+            Debug.Log("Program paused");
+        }
+        if (Input.GetKeyDown(KeyCode.F)) FrameStep = !FrameStep;
+    }
+
+    private void CameraPanning()
     {
         if (Input.GetMouseButton(0))
         {
@@ -166,7 +180,7 @@ public class Main : MonoBehaviour
         }
     }
 
-    public void SetCameraOrientationAndTransform()
+    private void SetCameraOrientationAndTransform()
     {
         // Camera position
         float3 worldSpaceCameraPos = transform.position;
@@ -211,8 +225,6 @@ public class Main : MonoBehaviour
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
-        int[] IterationSettings = new int[] { RenderSpheres ? 1 : 0, RenderBVs ? 1 : 0, (RenderTriObjects && BVHEnable) ? 1 : 0, (RenderTriObjects && !BVHEnable) ? 1 : 0 };
-        rtShader.SetInts("IterationSettings", IterationSettings);
 
         rtShader.SetInt("MaxBounceCount", MaxBounceCount);
         rtShader.SetInt("RaysPerPixel", RaysPerPixel);
@@ -222,11 +234,11 @@ public class Main : MonoBehaviour
         float fieldOfViewRad = fieldOfView * Mathf.PI / 180;
         float viewSpaceHeight = Mathf.Tan(fieldOfViewRad * 0.5f);
         float viewSpaceWidth = aspectRatio * viewSpaceHeight;
-        rtShader.SetFloat("viewSpaceWidth", viewSpaceWidth);
-        rtShader.SetFloat("viewSpaceHeight", viewSpaceHeight);
 
-        rtShader.SetFloat("defocusStrength", DefocusStrength);
-        rtShader.SetFloat("focalPlaneFactor", focalPlaneFactor);
+        rtShader.SetVector("ViewSpaceDims", new Vector2(viewSpaceWidth, viewSpaceHeight));
+
+        rtShader.SetFloat("DefocusStrength", DefocusStrength);
+        rtShader.SetFloat("FocalPlaneFactor", FocalPlaneFactor);
 
         // Debug overlay
         int[] DebugDataMaxValues = new int[] { DebugMaxTriChecks, DebugMaxBVChecks };
@@ -249,26 +261,12 @@ public class Main : MonoBehaviour
         rtShader.SetInts("TexDims", texDims);
         rtShader.SetTexture(1, "TestTexture", testTexture);
 
-        UnityEngine.Debug.Log("Internal program settings updated");
+        Debug.Log("Internal program settings updated");
     }
 
     private void SetData()
     {
         ComputeHelper.Release(AllBuffers());
-
-        // Set spheres data
-        Spheres = new Sphere[Func.MaxInt(SpheresInput.Length, 1)];
-        for (int i = 0; i < Spheres.Length && SpheresInput.Length != 0; i++)
-        {
-            Spheres[i] = new Sphere
-            {
-                pos = new float3(SpheresInput[i].x, SpheresInput[i].y, SpheresInput[i].z),
-                radius = SpheresInput[i].w,
-                materialKey = i == 0 ? 1 : 0
-            };
-        }
-        SphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(Spheres);
-        shaderHelper.SetSphereBuffer(SphereBuffer);
 
         // Set Material2s data
         Material2s = new Material2[Func.MaxInt(MatTypesInput1.Length, 1)];
@@ -292,14 +290,12 @@ public class Main : MonoBehaviour
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
         shaderHelper.SetBVBuffer(BVBuffer);
 
-        // Set Tris data
+        // Set SceneObjects & Tris data
+        SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
+        shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
         TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
         shaderHelper.SetTriBuffer(TriBuffer);
         RunPreCalcShader();
-
-        // Set SceneObjects data
-        SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
-        shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
 
         // Set LightObjects data
         LightObjectBuffer = ComputeHelper.CreateStructuredBuffer<LightObject>(LightObjects);
@@ -371,19 +367,26 @@ public class Main : MonoBehaviour
         }
 
         ComputeHelper.DispatchKernel(rtShader, "GenerateCandidates", Resolution, RayTracerThreadSize);
-        ComputeHelper.DispatchKernel(rtShader, "ContinueTracing", Resolution, RayTracerThreadSize);
+        ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
+    }
 
+    private void RunPostProcessingShader()
+    {
         ComputeHelper.DispatchKernel(ppShader, "AccumulateFrames", Resolution, PostProcesserThreadSize);
     }
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
-        RunRenderShader();
+        if (RenderThisFrame)
+        {
+            RunRenderShader();
+            RunPostProcessingShader();
+        }
 
         Graphics.Blit(DebugViewEnable ? DebugOverlayTexture : AccumulatedResultTexture, dest);
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, HitInfoBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, HitInfoBuffer };
 
     private void OnDestroy()
     {

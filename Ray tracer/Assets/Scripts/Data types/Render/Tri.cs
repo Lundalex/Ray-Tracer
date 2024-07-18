@@ -8,9 +8,8 @@ public struct Tri : BVHComponent
     public float2 uvA;
     public float2 uvB;
     public float2 uvC;
-    public float3 normal;
-    public int materialKey;
-    public int parentKey;
+    public float3 worldNormal;
+    public int parentIndex;
     public float3 GetMax()
     {
         Debug.Log("Tri method GetMax() not allowed to be used!");

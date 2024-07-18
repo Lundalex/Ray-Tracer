@@ -7,7 +7,7 @@ public struct SceneObjectData : BVHComponent
 {
     public Matrix4x4 worldToLocalMatrix;
     public Matrix4x4 localToWorldMatrix;
-    public int materialKey;
+    public int materialIndex;
     public int bvStartIndex;
     public int maxDepthBVH;
     public float areaApprox;

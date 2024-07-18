@@ -5,6 +5,7 @@
 const uint TrisNum;
 
 RWStructuredBuffer<Tri> Tris;
+RWStructuredBuffer<SceneObject> SceneObjects;
 
 float3 GetPlaneNormal (float3 a, float3 b, float3 c)
 {
@@ -12,6 +13,18 @@ float3 GetPlaneNormal (float3 a, float3 b, float3 c)
     float3 ac = c - a;
 
     return normalize(cross(ab, ac));
+}
+
+float3 GetPlaneNormalTransformed (float3 a, float3 b, float3 c, float4x4 transform)
+{
+    float3 ab = b - a;
+    float3 ac = c - a;
+
+    float3 localNormal = normalize(cross(ab, ac));
+
+    float3 transformedNormal = normalize(mul(transform, float4(localNormal, 0)).xyz);
+
+    return transformedNormal;
 }
 
 [numthreads(TN_PC,1,1)]
@@ -22,7 +35,7 @@ void CalcTriNormals (uint3 id : SV_DispatchThreadID)
 
     Tri tri = Tris[i];
 
-    tri.normal = GetPlaneNormal(tri.vA, tri.vB, tri.vC);
+    tri.worldNormal = GetPlaneNormalTransformed(tri.vA, tri.vB, tri.vC, SceneObjects[tri.parentIndex].localToWorldMatrix);
 
     Tris[i] = tri;
 }

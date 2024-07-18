@@ -8,4 +8,4 @@ static const int TN_RT = 8; // RayTracer
 static const int TN_PC = 256; // PreCalc
 static const int TN_PP = 8; // PostProcessing
 
-static const int MAX_BVH_DEPTH = 20;
+static const int MAX_BVH_DEPTH = 32;
