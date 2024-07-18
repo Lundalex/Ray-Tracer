@@ -220,11 +220,13 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
     {
         BoundingVolume bv = BVs[bvStack[--stackPointer]];
 
-        bool isLeaf = bv.childIndexA == -1 && bv.childIndexB == -1;
+        bool isLeaf = bv.indexA >= 0;
+        bv.indexA = abs(bv.indexA);
+        bv.indexB = abs(bv.indexB);
         
         if (isLeaf)
         {
-            for (int triIndex = bv.componentStart; triIndex < bv.componentStart + bv.totComponents; triIndex++)
+            for (int triIndex = bv.indexA; triIndex < bv.indexA + bv.indexB; triIndex++)
             {
                 Tri tri = Tris[triIndex];
                 TriHitInfo triHitInfo = RayTriangleIntersect(ray, tri); debugData.triChecks++;
@@ -243,28 +245,22 @@ void TraverseTrisBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray, 
             float dstA = 1.#INF;
             float dstB = 1.#INF;
 
-            // If child nodes exist, get the distances to their respective BVs
-            if (bv.childIndexA != -1)
-            {
-                BoundingVolume bvA = BVs[bv.childIndexA];
-                dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
-            }
-            if (bv.childIndexB != -1)
-            {
-                BoundingVolume bvB = BVs[bv.childIndexB];
-                dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
-            }
+            // Check child BV intersections
+            BoundingVolume bvA = BVs[bv.indexA];
+            dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            BoundingVolume bvB = BVs[bv.indexB];
+            dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
 
             // Push the nearest BV last, to avaluate it first
             if (dstA < dstB)
             {
-                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
-                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
             }
             else
             {
-                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
-                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
             }
         }
     }
@@ -280,11 +276,13 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
     {
         BoundingVolume bv = BVs[bvStack[--stackPointer]];
 
-        bool isLeaf = bv.childIndexA == -1 && bv.childIndexB == -1;
+        bool isLeaf = bv.indexA >= 0;
+        bv.indexA = abs(bv.indexA);
+        bv.indexB = abs(bv.indexB);
         
         if (isLeaf)
         {
-            for (int sceneObjectIndex = bv.componentStart; sceneObjectIndex < bv.componentStart + bv.totComponents; sceneObjectIndex++)
+            for (int sceneObjectIndex = bv.indexA; sceneObjectIndex < bv.indexA + bv.indexB; sceneObjectIndex++)
             {
                 SceneObject sceneObject = SceneObjects[sceneObjectIndex];
 
@@ -309,31 +307,22 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
         }
         else
         {
-            float dstA = 1.#INF;
-            float dstB = 1.#INF;
-
-            // If child nodes exist, get the distances to their respective BVs
-            if (bv.childIndexA != -1)
-            {
-                BoundingVolume bvA = BVs[bv.childIndexA];
-                dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
-            }
-            if (bv.childIndexB != -1)
-            {
-                BoundingVolume bvB = BVs[bv.childIndexB];
-                dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
-            }
+            // Check child BV intersections
+            BoundingVolume bvA = BVs[bv.indexA];
+            float dstA = RayBVIntersect(ray, bvA); debugData.bvChecks++;
+            BoundingVolume bvB = BVs[bv.indexB];
+            float dstB = RayBVIntersect(ray, bvB); debugData.bvChecks++;
 
             // Push the nearest BV last, to avaluate it first
             if (dstA < dstB)
             {
-                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
-                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
             }
             else
             {
-                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexA; }
-                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.childIndexB; }
+                if (dstA < hitInfo.dst) { bvStack[stackPointer++] = bv.indexA; }
+                if (dstB < hitInfo.dst) { bvStack[stackPointer++] = bv.indexB; }
             }
         }
     }
@@ -567,14 +556,8 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint 
     TraceInfo traceInfo;
     traceInfo.rayColor = float3(1, 1, 1);
     traceInfo.incomingLight = float3(0, 0, 0);
-    bool firstHitLight = hitInfo.materialKey == 1;
-    if (firstHitLight)
-    {
-        traceInfo.rayColor = float3(1, 1, 1);
-        traceInfo.incomingLight = float3(1, 1, 1);
-    }
 
-    for (int bounceCount = 0; bounceCount <= 1; bounceCount++) // MaxBounceCount = 1 for direct lighting 
+    for (int bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++) // MaxBounceCount = 1 for direct lighting 
     {
         if (hitInfo.dst != 1.#INF && !all(ray.dir) == 0.0)
         {
@@ -606,7 +589,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint 
             // Calculate new traceInfo values
             float3 sampleCol = SampleTexColor(hitInfo.uv); // changed from material.color
             float3 emittedLight = sampleCol * material.brightness;
-            traceInfo.incomingLight += emittedLight * traceInfo.rayColor;
+            traceInfo.incomingLight += emittedLight * traceInfo.rayColor / sqr(hitInfo.dst);
             traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
         }
         else
@@ -615,7 +598,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, inout DebugData debugData, inout uint 
         }
 
         // Recast ray
-        if (bounceCount != 1) hitInfo = GetRayCollision(ray, debugData);
+        if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
     }
 
     return traceInfo;
@@ -636,13 +619,20 @@ void ContinueTracing (uint3 id : SV_DispatchThreadID)
     HitInfo hitInfo = HitInfos[id.y * Resolution.x + id.x];
     float4 RISData = RayDirFromCandidates(rayIndex, state);
 
-    if (all(RISData.xyz) == 0)
+    // Return no color if initial ray trace missed
+    if (hitInfo.dst == 1.#INF)
+    {
+        Result[id.xy] = float4(0, 0, 0, 0);
+        return;
+    }
+    // Return the emitted light of the first hit object if no further ray directions candidates are found
+    else if (all(RISData.xyz) == 0)
     {
         Material2 material = Materials[hitInfo.materialKey];
 
         // Calculate new traceInfo values
         float3 sampleCol = SampleTexColor(hitInfo.uv); // changed from material.color
-        float3 emittedLight = sampleCol * material.brightness;
+        float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst); //  * RISData.w
         float3 col = emittedLight;
 
         Result[id.xy] = float4(col, 0);
@@ -662,21 +652,13 @@ void ContinueTracing (uint3 id : SV_DispatchThreadID)
         TraceInfo traceInfo = Trace(ray, hitInfo, debugData, state);
 
         // Record traceInfo
-        combinedTraceInfo.rayColor += traceInfo.rayColor;
+        // combinedTraceInfo.rayColor += traceInfo.rayColor;
         combinedTraceInfo.incomingLight += traceInfo.incomingLight;
     }
-    combinedTraceInfo.rayColor /= correctionWeight;
+    // combinedTraceInfo.rayColor /= correctionWeight;
     combinedTraceInfo.incomingLight /= correctionWeight;
 
-    // Combine prev frame with current frame. Weight the contributions to result in an average over all frames.
     float3 col = combinedTraceInfo.incomingLight;
-    float3 colPrev = Result[id.xy].xyz;
 
-    float weight = 1.0 / (FrameCount + 1);
-
-    float3 accumulatedCol = saturate(colPrev * (1 - weight) + col * weight);
-
-    // Render result color
-    // Result[id.xy] = float4(accumulatedCol.x, accumulatedCol.y, accumulatedCol.z, 0);
     Result[id.xy] = float4(col, 0);
 }

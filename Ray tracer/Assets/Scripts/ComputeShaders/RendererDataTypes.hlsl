@@ -23,10 +23,8 @@ struct BoundingVolume
 {
     float3 min;
     float3 max;
-    int componentStart;
-    int totComponents;
-    int childIndexA;
-    int childIndexB;
+    int indexA; // -childIndexA / componentsStart, a < 0 <= b
+    int indexB; // -childIndexB / totComponents, a < 0 <= b
 };
 struct SceneObject
 {
@@ -83,11 +81,6 @@ struct TriHitInfo
     float3 hitPoint;
     float2 uv;
     int triIndex;
-};
-struct BVHitInfo
-{
-    bool didHit;
-    float dst;
 };
 struct TraceInfo
 {

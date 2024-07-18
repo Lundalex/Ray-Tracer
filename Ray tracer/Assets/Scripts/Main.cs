@@ -44,7 +44,8 @@ public class Main : MonoBehaviour
     public float4[] MatTypesInput2; // x: smoothness
 
     [Header("References")]
-    public ComputeShader rtShader; // Either BVH only or BVH + ReStir
+    public ComputeShader rtShader; // BVH + ReStir (direct lighting)
+    public ComputeShader ppShader;
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
@@ -55,9 +56,11 @@ public class Main : MonoBehaviour
 
     // Private variables
     private RenderTexture RTResultTexture;
+    private RenderTexture AccumulatedResultTexture;
     private RenderTexture DebugOverlayTexture;
     private int RayTracerThreadSize = 8; // /32
-    private int PreCalcThreadSize = 16; // /32
+    private int PostProcesserThreadSize = 8; // /32
+    private int PreCalcThreadSize = 256;
     public Sphere[] Spheres;
     public Material2[] Material2s;
     public Tri[] Tris;
@@ -126,9 +129,10 @@ public class Main : MonoBehaviour
     {
         // Frame set variables
         int FrameRand = UnityEngine.Random.Range(0, 999999);
+        FrameCount++;
         rtShader.SetInt("FrameRand", FrameRand);
-        rtShader.SetInt("FrameCount", FrameCount++);
-
+        rtShader.SetInt("FrameCount", FrameCount);
+        ppShader.SetInt("FrameCount", FrameCount);
         CameraMovement();
         CameraPanning();
 
@@ -327,6 +331,18 @@ public class Main : MonoBehaviour
             };
             RTResultTexture.Create();
             rtShader.SetTexture(1, "Result", RTResultTexture);
+            ppShader.SetTexture(0, "Result", RTResultTexture);
+        }
+
+        // Accumulated result texture
+        if (AccumulatedResultTexture == null)
+        {
+            AccumulatedResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
+            {
+                enableRandomWrite = true
+            };
+            AccumulatedResultTexture.Create();
+            ppShader.SetTexture(0, "AccumulatedResult", AccumulatedResultTexture);
         }
 
         // Debug overlay texture
@@ -356,13 +372,15 @@ public class Main : MonoBehaviour
 
         ComputeHelper.DispatchKernel(rtShader, "GenerateCandidates", Resolution, RayTracerThreadSize);
         ComputeHelper.DispatchKernel(rtShader, "ContinueTracing", Resolution, RayTracerThreadSize);
+
+        ComputeHelper.DispatchKernel(ppShader, "AccumulateFrames", Resolution, PostProcesserThreadSize);
     }
 
     private void OnRenderImage(RenderTexture src, RenderTexture dest)
     {
         RunRenderShader();
 
-        Graphics.Blit(DebugViewEnable ? DebugOverlayTexture : RTResultTexture, dest); // RayHitPointTexture 
+        Graphics.Blit(DebugViewEnable ? DebugOverlayTexture : AccumulatedResultTexture, dest);
     }
 
     private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { SphereBuffer, BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, HitInfoBuffer };

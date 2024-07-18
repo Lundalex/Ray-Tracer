@@ -20,6 +20,7 @@ public class MeshHelper : MonoBehaviour
     private SceneObjectData[] sceneObjectsData;
     private LightObject[] lightObjects;
     private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
+    private int2[] loadedComponentDatas = new int2[0];
     private List<(Mesh mesh, Tri2[] meshTris, int componentStartIndex, int bvStartIndex)> LoadedMeshes = new();
     private Tri[] loadedTris = new Tri[0];
     private int[] loadedMeshesLookup;
@@ -255,7 +256,7 @@ public class MeshHelper : MonoBehaviour
         return furthestChildIndex;
     }
 
-    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, Tri2[] newTris, ref Tri[] tris, int maxDepth)
+    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, ref int2[] componentDatas, Tri2[] newTris, ref Tri[] tris, int maxDepth)
     {
         float3 objectMin = GetMin(newTris);
         float3 objectMax = GetMax(newTris);
@@ -276,11 +277,14 @@ public class MeshHelper : MonoBehaviour
         DebugUtils.LogStopWatch("BVH construction", ref stopwatch);
 
         // Convert to bounding volume struct variant for shader buffer transfer
-        BoundingVolume[] newBoundingVolumes = BV.ClassToStruct(newBVs);
+        BoundingVolume[] newBoundingVolumes;
+        int2[] newComponentDatas;
+        (newBoundingVolumes, newComponentDatas) = BV.ClassToStruct(newBVs);
 
         // Add new bounding volumes & tris to existing arrays
         tris = tris.Concat(Utils.TrisFromTri2s(newTris)).ToArray();
         boundingVolumes = boundingVolumes.Concat(newBoundingVolumes).ToArray();
+        componentDatas = componentDatas.Concat(newComponentDatas).ToArray();
 
         return (newBoundingVolumes.Length, newTris.Length);
     }
@@ -346,7 +350,7 @@ public class MeshHelper : MonoBehaviour
             {
                 // Load mesh (construct it's BVH) if it has not yet been loaded
                 LoadedMeshes.Add(new(mesh, LoadMesh(mesh), loadedTris.Length, loadedBoundingVolumes.Length));
-                ConstructBVH(ref loadedBoundingVolumes, LoadMesh(mesh), ref loadedTris, sceneObjectData.maxDepthBVH);
+                ConstructBVH(ref loadedBoundingVolumes, ref loadedComponentDatas, LoadMesh(mesh), ref loadedTris, sceneObjectData.maxDepthBVH);
                 meshIndex = LoadedMeshes.Count - 1;
             }
             loadedMeshesLookup[i] = meshIndex;
@@ -365,6 +369,7 @@ public class MeshHelper : MonoBehaviour
         Stopwatch stopwatch = Stopwatch.StartNew();
 
         Utils.RemoveFromEndOfArray(ref loadedBoundingVolumes, lastSceneBVHLength);
+        Utils.RemoveFromEndOfArray(ref loadedComponentDatas, lastSceneBVHLength);
 
         // Transform tri mesh to global space
         float totArea = 0.0f;
@@ -405,8 +410,11 @@ public class MeshHelper : MonoBehaviour
         DebugUtils.LogStopWatch("BVH construction (scene objects)", ref stopwatch);
 
         // Replace existing scene BVH with new BVH data
-        BoundingVolume[] newBoundingVolumes = BV.ClassToStruct(newBVs);
+        BoundingVolume[] newBoundingVolumes;
+        int2[] newComponentData;
+        (newBoundingVolumes, newComponentData) = BV.ClassToStruct(newBVs);
         loadedBoundingVolumes = loadedBoundingVolumes.Concat(newBoundingVolumes).ToArray();
+        loadedComponentDatas = loadedComponentDatas.Concat(newComponentData).ToArray();
         lastSceneBVHLength = newBoundingVolumes.Length;
 
         // Load light emitting object data
@@ -423,8 +431,8 @@ public class MeshHelper : MonoBehaviour
                     localToWorldMatrix = sceneObjectData.localToWorldMatrix,
                     areaApprox = sceneObjectData.areaApprox,
                     brightness = m.Material2s[sceneObjectData.materialKey].brightness,
-                    triStart = loadedBoundingVolumes[sceneObjectData.bvStartIndex].componentStart,
-                    totTris = loadedBoundingVolumes[sceneObjectData.bvStartIndex].totComponents
+                    triStart = loadedComponentDatas[sceneObjectData.bvStartIndex].x,
+                    totTris = loadedComponentDatas[sceneObjectData.bvStartIndex].y
                 };
                 lightObjects[lightObjectIndex++] = lightObject;
             }

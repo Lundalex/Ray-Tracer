@@ -1,4 +1,7 @@
 ReStir paper: https://cdn.pharr.org/ReSTIR.pdf
+ReStir = Reservoir-based SpatioTemporal Importance Resampling
+
+104 FPS currently
 
 !! LightObjects should be kept at a low triangle count for better performance
 

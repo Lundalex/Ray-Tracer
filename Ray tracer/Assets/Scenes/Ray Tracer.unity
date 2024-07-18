@@ -332,7 +332,7 @@ MonoBehaviour:
   - x: 1
     y: 1
     z: 1
-    w: 10
+    w: 300
   MatTypesInput2:
   - x: 1
     y: 0
@@ -343,6 +343,7 @@ MonoBehaviour:
     z: 0
     w: 0
   rtShader: {fileID: 7200000, guid: 7606d5fb8e6c542bba823cfe2e8074c2, type: 3}
+  ppShader: {fileID: 7200000, guid: f712fc5910f7f44ba9d171388088c9c0, type: 3}
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
   shaderHelper: {fileID: 1356186230}
   meshHelper: {fileID: 1356186231}

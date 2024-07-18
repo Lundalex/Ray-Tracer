@@ -17,29 +17,35 @@ public class BV
         this.childIndexA = childIndexA;
         this.childIndexB = childIndexB;
     }
-    private BoundingVolume ThisToStruct()
+    private (BoundingVolume, int2) ThisToStruct()
     {
+        bool isLeaf = childIndexA == -1 && childIndexB == -1;
+
+        int indexA = isLeaf ? componentStart : -childIndexA;
+        int indexB = isLeaf ? totComponents : -childIndexB;
+
+        int2 componentData = new int2(componentStart, totComponents);
+
         BoundingVolume boundingVolume = new BoundingVolume
         {
             min = min,
             max = max,
-            componentStart = componentStart,
-            totComponents = totComponents,
-            childIndexA = childIndexA,
-            childIndexB = childIndexB
+            indexA = indexA,
+            indexB = indexB
         };
 
-        return boundingVolume;
+        return (boundingVolume, componentData);
     }
-    public static BoundingVolume[] ClassToStruct(List<BV> BVs)
+    public static (BoundingVolume[], int2[]) ClassToStruct(List<BV> BVs)
     {
         BoundingVolume[] boundingVolumes = new BoundingVolume[BVs.Count];
+        int2[] componentDatas = new int2[BVs.Count];
         for (int i = 0; i < BVs.Count; i++)
         {
-            boundingVolumes[i] = BVs[i].ThisToStruct();
+            (boundingVolumes[i], componentDatas[i]) = BVs[i].ThisToStruct();
         }
 
-        return boundingVolumes;
+        return (boundingVolumes, componentDatas);
     }
     public bool IsLeaf()
     {
@@ -55,8 +61,6 @@ public struct BoundingVolume
 {
     public float3 min;
     public float3 max;
-    public int componentStart;
-    public int totComponents;
-    public int childIndexA;
-    public int childIndexB;
+    public int indexA; // childIndexA / componentsStart, a < 0 <= b
+    public int indexB; // childIndexB / totComponents, a < 0 <= b
 };
