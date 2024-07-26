@@ -304,26 +304,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf57d16cf254eb348936bec573a2b16a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  CameraMoveSpeed: 10
-  CameraPanSpeed: 10
+  CameraMoveSpeed: 8
+  CameraPanSpeed: 8
   DebugViewEnable: 0
   DebugMaxTriChecks: 10
   DebugMaxBVChecks: 100
   fieldOfView: 70
   Resolution:
-    x: 1440
-    y: 810
+    x: 1920
+    y: 1080
   MaxBounceCount: 1
   RaysPerPixel: 1
   ScatterProbability: 0.9
   DefocusStrength: 0
   FocalPlaneFactor: 1
   FrameCount: 0
-  SceneObjectCandidatesNum: 3
-  TriCandidatesNum: 1
-  SceneObjectReservoirTestsNum: 3
-  TriReservoirTestsNum: 1
-  CandidateReservoirTestsNum: 2
+  SceneObjectReservoirTestsNum: 5
+  TriReservoirTestsNum: 5
+  CandidateReservoirTestsNum: 5
+  SpatialReuseIterations: 4
+  TemporalReuseWeight: 0.8
+  PixelMovementThreshold: 1
+  SpatialCandidateMovementThreshold: 0.5
   MatTypesInput1:
   - x: 1
     y: 1
@@ -336,7 +338,7 @@ MonoBehaviour:
   - x: 1
     y: 1
     z: 1
-    w: 300
+    w: 80
   MatTypesInput2:
   - x: 1
     y: 0

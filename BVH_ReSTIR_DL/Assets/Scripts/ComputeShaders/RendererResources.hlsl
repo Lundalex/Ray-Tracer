@@ -86,8 +86,7 @@ bool weightedRand(float a, float b, inout uint state)
 {
     float randNorm = randNormalized(state);
     
-    float totalWeight = a + b;
-    float relRand = randNorm * totalWeight;
+    float relRand = randNorm * b;
     return relRand < a;
 }
 

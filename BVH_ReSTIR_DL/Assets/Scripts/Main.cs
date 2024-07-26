@@ -27,11 +27,13 @@ public class Main : MonoBehaviour
     public float FocalPlaneFactor; // FocalPlaneFactor must be positive
     public int FrameCount;
     [Header("ReStir settings")]
-    public int SceneObjectCandidatesNum;
-    public int TriCandidatesNum;
     public int SceneObjectReservoirTestsNum;
     public int TriReservoirTestsNum;
     public int CandidateReservoirTestsNum;
+    [Range(0, 5)] public int SpatialReuseIterations;
+    [Range(0.0f, 1.0f)] public float TemporalReuseWeight;
+    public float PixelMovementThreshold;
+    public float SpatialCandidateMovementThreshold;
 
     [Header("Material settings")]
     public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
@@ -46,6 +48,7 @@ public class Main : MonoBehaviour
 
     // Script communication
     [NonSerialized] public bool DoUpdateSettings;
+    [NonSerialized] public bool DoResetBufferData;
     [NonSerialized] public bool ProgramStarted = false;
 
     // Private variables
@@ -68,10 +71,13 @@ public class Main : MonoBehaviour
 
     // ReStir
     private ComputeBuffer CandidateBuffer;
+    private ComputeBuffer CandidateReuseBuffer;
+    private ComputeBuffer TemporalFrameBuffer;
     private ComputeBuffer HitInfoBuffer;
-    private RenderTexture RayHitPointTexture;
-    private string RISShaderName = "RIS_BVH_RayTracer";
-    private bool ReStirShaderEnabled;
+    private RenderTexture RayHitPointATexture;
+    private RenderTexture RayHitPointBTexture;
+    private RenderTexture DepthBufferTexture;
+    private RenderTexture NormalsBufferTexture;
 
     // Camera data record
     private Vector3 lastCameraPosition;
@@ -89,15 +95,14 @@ public class Main : MonoBehaviour
         lastCameraPosition = transform.position;
         lastCameraRotation = transform.rotation;
 
-        ReStirShaderEnabled = rtShader.name == RISShaderName;
-        if (ReStirShaderEnabled && RaysPerPixel != 1)
+        if (RaysPerPixel != 1)
         {
-            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because ReStir shader is enabled!");
+            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because no other values are supported currently!");
             RaysPerPixel = 1;
         }
 
         UpdatePerFrame();
-        UpdateSettings();
+        UpdateSettings(true);
 
         ProgramStarted = true;
     }
@@ -114,19 +119,14 @@ public class Main : MonoBehaviour
 
             UpdatePerFrame();
 
-            if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(); }
+            if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(DoResetBufferData); DoResetBufferData = false; }
         }
         else RenderThisFrame = false;
     }
 
     private void LateUpdate()
     {
-        if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
-        {
-            DoUpdateSettings = true;
-            lastCameraPosition = transform.position;
-            lastCameraRotation = transform.rotation;
-        }
+        if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation) SetCameraOrientationAndTransform();
     }
 
     private void UpdatePerFrame()
@@ -215,13 +215,13 @@ public class Main : MonoBehaviour
 
     private void OnValidate()
     {
-        if (ProgramStarted) DoUpdateSettings = true;
+        if (ProgramStarted) { DoUpdateSettings = true; DoResetBufferData = true; }
     }
 
-    private void UpdateSettings()
+    private void UpdateSettings(bool resetBufferData)
     {
         FrameCount = 0;
-        SetData();
+        if (resetBufferData) SetData();
 
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
@@ -245,16 +245,12 @@ public class Main : MonoBehaviour
         rtShader.SetInts("DebugDataMaxValues", DebugDataMaxValues);
 
         // ReStir
-        if (ReStirShaderEnabled)
-        {
-            rtShader.SetInt("SceneObjectCandidatesNum", SceneObjectCandidatesNum);
-            rtShader.SetInt("TriCandidatesNum", TriCandidatesNum);
-            rtShader.SetInt("TotCandidatesNum", SceneObjectCandidatesNum * TriCandidatesNum);
-            rtShader.SetInt("SceneObjectReservoirTestsNum", SceneObjectReservoirTestsNum);
-            rtShader.SetInt("TriReservoirTestsNum", TriReservoirTestsNum);
-            rtShader.SetInt("CandidateReservoirTestsNum", CandidateReservoirTestsNum);
-
-        }
+        rtShader.SetInt("SceneObjectReservoirTestsNum", SceneObjectReservoirTestsNum);
+        rtShader.SetInt("TriReservoirTestsNum", TriReservoirTestsNum);
+        rtShader.SetInt("CandidateReservoirTestsNum", CandidateReservoirTestsNum);
+        rtShader.SetFloat("TemporalReuseWeight", TemporalReuseWeight);
+        rtShader.SetFloat("PixelMovementThreshold", PixelMovementThreshold);
+        rtShader.SetFloat("SpatialCandidateMovementThreshold", SpatialCandidateMovementThreshold);
 
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
@@ -302,12 +298,83 @@ public class Main : MonoBehaviour
         shaderHelper.SetLightObjectBuffer(LightObjectBuffer);
 
         // ReStir
-        if (ReStirShaderEnabled)
+        CandidateBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        shaderHelper.SetCandidateBuffer(CandidateBuffer);
+        CandidateReuseBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        shaderHelper.SetCandidateReuseBuffer(CandidateReuseBuffer);
+        TemporalFrameBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        shaderHelper.SetTemporalFrameBuffer(TemporalFrameBuffer);
+
+        HitInfoBuffer = ComputeHelper.CreateStructuredBuffer<HitInfo>(Resolution.x * Resolution.y);
+        shaderHelper.SetHitInfoBuffer(HitInfoBuffer);
+    }
+
+    private void CreateTextures()
+    {
+        // Ray tracer result texture
+        if (RTResultTexture == null)
         {
-            CandidateBuffer = ComputeHelper.CreateStructuredBuffer<float4>(Resolution.x * Resolution.y * RaysPerPixel * SceneObjectCandidatesNum * TriCandidatesNum);
-            shaderHelper.SetCandidateBuffer(CandidateBuffer);
-            HitInfoBuffer = ComputeHelper.CreateStructuredBuffer<HitInfo>(Resolution.x * Resolution.y);
-            shaderHelper.SetHitInfoBuffer(HitInfoBuffer);
+            RTResultTexture = TextureHelper.CreateTexture(Resolution, 4);
+            RTResultTexture.Create();
+            rtShader.SetTexture(4, "Result", RTResultTexture);
+            ppShader.SetTexture(0, "Result", RTResultTexture);
+        }
+
+        // Accumulated result texture
+        if (AccumulatedResultTexture == null)
+        {
+            AccumulatedResultTexture = TextureHelper.CreateTexture(Resolution, 4);
+            AccumulatedResultTexture.Create();
+            ppShader.SetTexture(0, "AccumulatedResult", AccumulatedResultTexture);
+        }
+
+        // Debug overlay texture
+        if (DebugOverlayTexture == null)
+        {
+            DebugOverlayTexture = TextureHelper.CreateTexture(Resolution, 4);
+            DebugOverlayTexture.Create();
+            rtShader.SetTexture(0, "DebugOverlay", DebugOverlayTexture);
+        }
+
+        // Ray hit point double buffer textures
+        if (RayHitPointATexture == null)
+        {
+            RayHitPointATexture = TextureHelper.CreateTexture(Resolution, 3);
+            RayHitPointATexture.Create();
+            rtShader.SetTexture(0, "RayHitPointsA", RayHitPointATexture);
+            rtShader.SetTexture(3, "RayHitPointsA", RayHitPointATexture);
+        }
+        if (RayHitPointBTexture == null)
+        {
+            RayHitPointBTexture = TextureHelper.CreateTexture(Resolution, 3);
+            RayHitPointBTexture.Create();
+            rtShader.SetTexture(0, "RayHitPointsB", RayHitPointBTexture);
+            rtShader.SetTexture(3, "RayHitPointsB", RayHitPointBTexture);
+        }
+
+        // Depth buffer texture
+        if (DepthBufferTexture == null)
+        {
+            DepthBufferTexture = new RenderTexture(Resolution.x, Resolution.y, 0, RenderTextureFormat.RFloat)
+            {
+                dimension = UnityEngine.Rendering.TextureDimension.Tex2D,
+                enableRandomWrite = true,
+                filterMode = FilterMode.Bilinear
+            };
+            DepthBufferTexture.Create();
+            rtShader.SetTexture(0, "DepthBuffer", DepthBufferTexture);
+            rtShader.SetTexture(1, "DepthBuffer", DepthBufferTexture);
+            rtShader.SetTexture(2, "DepthBuffer", DepthBufferTexture);
+            rtShader.SetTexture(3, "DepthBuffer", DepthBufferTexture);
+        }
+
+        // Normals buffer texture
+        if (NormalsBufferTexture == null)
+        {
+            NormalsBufferTexture = TextureHelper.CreateTexture(Resolution, 3);
+            NormalsBufferTexture.Create();
+            rtShader.SetTexture(0, "NormalsBuffer", NormalsBufferTexture);
+            rtShader.SetTexture(1, "NormalsBuffer", NormalsBufferTexture);
         }
     }
 
@@ -316,57 +383,33 @@ public class Main : MonoBehaviour
         ComputeHelper.DispatchKernel(pcShader, "CalcTriNormals", Tris.Length, PreCalcThreadSize);
     }
 
-    private void RunRenderShader()
+    private void SpatialReuse()
     {
-        // Ray tracer result texture
-        if (RTResultTexture == null)
+        bool reuseBufferCycle = false;
+        for (int i = 0; i < SpatialReuseIterations; i++)
         {
-            RTResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
-            {
-                enableRandomWrite = true
-            };
-            RTResultTexture.Create();
-            rtShader.SetTexture(1, "Result", RTResultTexture);
-            ppShader.SetTexture(0, "Result", RTResultTexture);
+            reuseBufferCycle = !reuseBufferCycle;
+
+            int offset = (int)Mathf.Pow(3, i);
+            rtShader.SetInt("Offset", offset);
+            rtShader.SetInt("ReuseBufferCycle", reuseBufferCycle ? 1 : 0);
+
+            ComputeHelper.DispatchKernel(rtShader, "SpatialReusePass", Resolution, RayTracerThreadSize);
         }
 
-        // Accumulated result texture
-        if (AccumulatedResultTexture == null)
-        {
-            AccumulatedResultTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
-            {
-                enableRandomWrite = true
-            };
-            AccumulatedResultTexture.Create();
-            ppShader.SetTexture(0, "AccumulatedResult", AccumulatedResultTexture);
-        }
+        if (reuseBufferCycle == true) ComputeHelper.DispatchKernel(rtShader, "TransferToOriginal", Resolution, RayTracerThreadSize);
+    }
 
-        // Debug overlay texture
-        if (DebugOverlayTexture == null)
-        {
-            DebugOverlayTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
-            {
-                enableRandomWrite = true
-            };
-            DebugOverlayTexture.Create();
-            rtShader.SetTexture(0, "DebugOverlay", DebugOverlayTexture);
-        }
+    private void RunReSTIRShader()
+    {
+        CreateTextures();
 
-        // ReStir
-        if (ReStirShaderEnabled)
-        {
-            if (RayHitPointTexture == null)
-            {
-                RayHitPointTexture = new RenderTexture(Resolution.x, Resolution.y, 24)
-                {
-                    enableRandomWrite = true
-                };
-                RayHitPointTexture.Create();
-                rtShader.SetTexture(0, "RayHitPoints", RayHitPointTexture);
-            }
-        }
+        ComputeHelper.DispatchKernel(rtShader, "InitialTrace", Resolution, RayTracerThreadSize);
 
-        ComputeHelper.DispatchKernel(rtShader, "GenerateCandidates", Resolution, RayTracerThreadSize);
+        if (TemporalReuseWeight > 0) ComputeHelper.DispatchKernel(rtShader, "TemporalReuse", Resolution, RayTracerThreadSize);
+
+        if (SpatialReuseIterations > 0) SpatialReuse();
+
         ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
     }
 
@@ -379,14 +422,14 @@ public class Main : MonoBehaviour
     {
         if (RenderThisFrame)
         {
-            RunRenderShader();
+            RunReSTIRShader();
             RunPostProcessingShader();
         }
 
-        Graphics.Blit(DebugViewEnable ? DebugOverlayTexture : AccumulatedResultTexture, dest);
+        Graphics.Blit(DebugViewEnable ? AccumulatedResultTexture : RTResultTexture, dest); // DebugOverlayTexture
     }
 
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, HitInfoBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };
 
     private void OnDestroy()
     {
@@ -419,19 +462,19 @@ public class Main : MonoBehaviour
             }
             reservoir.totWeights += candidateWeight;
         }
-        UnityEngine.Debug.Log(reservoir);
+        Debug.Log(reservoir);
     }
 
     void GetPixelsFromTexture()
     {
         // Create a new Texture2D with the same dimensions and format as the RenderTexture
-        Texture2D tex = new Texture2D(RayHitPointTexture.width, RayHitPointTexture.height, TextureFormat.RGBA32, false);
+        Texture2D tex = new Texture2D(RayHitPointATexture.width, RayHitPointATexture.height, TextureFormat.RGBA32, false);
 
         // Set the RenderTexture as the active render target
-        RenderTexture.active = RayHitPointTexture;
+        RenderTexture.active = RayHitPointATexture;
 
         // Read the RenderTexture into the Texture2D
-        tex.ReadPixels(new Rect(0, 0, RayHitPointTexture.width, RayHitPointTexture.height), 0, 0);
+        tex.ReadPixels(new Rect(0, 0, RayHitPointATexture.width, RayHitPointATexture.height), 0, 0);
         tex.Apply();
 
         Color[] pixels = tex.GetPixels();

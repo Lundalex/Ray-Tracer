@@ -1,5 +1,4 @@
 using UnityEngine;
-using Unity.Mathematics;
 
 // Import utils from Resources.cs
 using Resources;
@@ -22,14 +21,19 @@ public class SceneObjectSettings : MonoBehaviour
 
     private void OnValidate()
     {
-        m = m != null ? m : GameObject.Find("Main Camera").GetComponent<Main>();
-        if (m.ProgramStarted) m.DoUpdateSettings = true;
+        if (m == null)
+        {
+            m = GameObject.Find("Main Camera").GetComponent<Main>();
+        }
+
+        if (m.ProgramStarted) { m.DoUpdateSettings = true; m.DoResetBufferData = true; }
     }
     private void LateUpdate()
     {
         if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
         {
             m.DoUpdateSettings = true;
+            m.DoResetBufferData = true;
             lastCameraPosition = transform.position;
             lastCameraRotation = transform.rotation;
         }
