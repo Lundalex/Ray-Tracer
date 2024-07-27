@@ -33,7 +33,9 @@ public class Main : MonoBehaviour
     [Range(0, 5)] public int SpatialReuseIterations;
     [Range(0.0f, 1.0f)] public float TemporalReuseWeight;
     public float PixelMovementThreshold;
-    public float SpatialCandidateMovementThreshold;
+    public float SpatialHitPointDiffThreshold;
+    public float SpatialNormalsAngleThreshold;
+    public bool DoVisibilityReuse;
 
     [Header("Material settings")]
     public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
@@ -250,7 +252,9 @@ public class Main : MonoBehaviour
         rtShader.SetInt("CandidateReservoirTestsNum", CandidateReservoirTestsNum);
         rtShader.SetFloat("TemporalReuseWeight", TemporalReuseWeight);
         rtShader.SetFloat("PixelMovementThreshold", PixelMovementThreshold);
-        rtShader.SetFloat("SpatialCandidateMovementThreshold", SpatialCandidateMovementThreshold);
+        rtShader.SetFloat("SpatialHitPointDiffThreshold", SpatialHitPointDiffThreshold);
+        rtShader.SetFloat("SpatialNormalsAngleThreshold", SpatialNormalsAngleThreshold);
+        rtShader.SetBool("DoVisibilityReuse", DoVisibilityReuse);
 
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
@@ -392,7 +396,7 @@ public class Main : MonoBehaviour
 
             int offset = (int)Mathf.Pow(3, i);
             rtShader.SetInt("Offset", offset);
-            rtShader.SetInt("ReuseBufferCycle", reuseBufferCycle ? 1 : 0);
+            rtShader.SetBool("ReuseBufferCycle", reuseBufferCycle);
 
             ComputeHelper.DispatchKernel(rtShader, "SpatialReusePass", Resolution, RayTracerThreadSize);
         }

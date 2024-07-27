@@ -140,3 +140,13 @@ float3 GetRandWorldPointTri(Tri tri, float4x4 localToWorldMatrix, inout uint sta
 
     return worldPoint;
 }
+
+float angleBetweenNormals(float3 a, float3 b)
+{
+    float dotProduct = dot(a, b);
+    dotProduct = clamp(dotProduct, -1.0, 1.0);
+    float angleRadians = acos(dotProduct);
+    float angleDegrees = degrees(angleRadians);
+
+    return angleDegrees;
+}

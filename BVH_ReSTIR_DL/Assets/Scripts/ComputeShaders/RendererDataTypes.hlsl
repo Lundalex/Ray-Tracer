@@ -84,6 +84,7 @@ struct CandidateReservoir
 {
     float3 dir;
     float3 hitPoint;
+    float3 normal;
     float chosenWeight;
     float totWeights;
     float totCandidates; // "float" since temporal reuse averages the values from sequential frames
@@ -104,6 +105,14 @@ Reservoir InitReservoir(int firstElementIndex, float firstElementWeight)
     reservoir.totWeights = firstElementWeight;
 
     return reservoir;
+}
+Ray InitRay(float3 pos, float3 dir)
+{
+    Ray ray;
+    ray.pos = pos;
+    ray.dir = dir;
+
+    return ray;
 }
 Ray InitRay()
 {
@@ -142,11 +151,12 @@ Material2 InitMaterial()
 
     return material;
 }
-CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float chosenWeight, float totWeights, int totCandidates)
+CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float3 normal, float chosenWeight, float totWeights, int totCandidates)
 {
     CandidateReservoir candidateReservoir;
     candidateReservoir.dir = dir;
     candidateReservoir.hitPoint = hitPoint;
+    candidateReservoir.normal = normal;
     candidateReservoir.chosenWeight = chosenWeight;
     candidateReservoir.totWeights = totWeights;
     candidateReservoir.totCandidates = totCandidates;
@@ -158,6 +168,7 @@ CandidateReservoir InitCandidateReservoir()
     CandidateReservoir candidateReservoir;
     candidateReservoir.dir = 0;
     candidateReservoir.hitPoint = 0;
+    candidateReservoir.normal = 0;
     candidateReservoir.chosenWeight = 0;
     candidateReservoir.totWeights = 0;
     candidateReservoir.totCandidates = 0;

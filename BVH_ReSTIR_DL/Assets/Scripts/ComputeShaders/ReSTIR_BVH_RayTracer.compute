@@ -43,9 +43,11 @@ const uint SceneObjectReservoirTestsNum;
 const uint TriReservoirTestsNum;
 
 // ReSTIR - Spatial reuse
-const int ReuseBufferCycle; // 1 == true, 0 == false
+const bool ReuseBufferCycle;
 const int Offset;
-const float SpatialCandidateMovementThreshold;
+const float SpatialHitPointDiffThreshold;
+const float SpatialNormalsAngleThreshold;
+const bool DoVisibilityReuse;
 
 // ReSTIR - Temporal reuse
 const float TemporalReuseWeight;
@@ -364,14 +366,32 @@ void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, i
         if (dot(hitNormal, dir) < 0)
         {
             // If direction is invalid, abandon the current candidate by assigning an empty reservoir
-            Candidates[candidateIndex] = InitCandidateReservoir(float3(0, 0, 0), float3(0, 0, 0), 0, 0, 0);
+            Candidates[candidateIndex] = InitCandidateReservoir();
             continue;
         }
 
         float hitAngleDot = max(dot(tri.worldNormal, dir), 0);
 
         float candidateWeight = GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness);
-        CandidateReservoir candidateReservoir = InitCandidateReservoir(dir, hitPoint, candidateWeight, candidateWeight, 1);
+
+        // Visibility reuse
+        // Expensive due to the need for casting a ray, but removes most visibility noise from the end RT result
+        // Doesn't work currently
+        if (DoVisibilityReuse)
+        {
+            Ray ray = InitRay(hitPoint, dir);
+            DebugData t;
+
+            // Traverse the scene to validate the candidate
+            // Then discard the candidate if the point is occluded
+            HitInfo hitInfo = GetRayCollision(ray, t);
+            if (any(abs(hitInfo.hitPoint - worldPoint) > 5))
+            {
+                candidateWeight = 0;
+            }
+        }
+
+        CandidateReservoir candidateReservoir = InitCandidateReservoir(dir, hitPoint, hitNormal, candidateWeight, candidateWeight, 1);
         Candidates[candidateIndex] = candidateReservoir;
     }
 }
@@ -408,7 +428,7 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
     HitInfo hitInfo = GetRayCollision(ray, debugData);
     bool didHit = hitInfo.dst != 1.#INF;
 
-    // Use ReStir to generate ray bounce direction candidates
+    // Generate a ray bounce direction candidate
     if (didHit) GenerateCandidatesDL2(hitInfo.normal, hitInfo.hitPoint, pixelIndex, state);
 
     // Save ray hit info data
@@ -435,7 +455,6 @@ CandidateReservoir SpatialCandidateReservoirSample(uint candidateBaseIndex, uint
     CandidateReservoir baseReservoir;
     if (ReuseBufferCycle) baseReservoir = Candidates[candidateBaseIndex];
     else baseReservoir = CandidatesB[candidateBaseIndex];
-    float3 basehitPoint = baseReservoir.hitPoint;
 
     for (int x = -1; x <= 1; x++)
     {
@@ -453,15 +472,16 @@ CandidateReservoir SpatialCandidateReservoirSample(uint candidateBaseIndex, uint
             else candidateReservoir = CandidatesB[candidateIndex];
             if (all(candidateReservoir.dir) == 0) continue;
 
-            // Temp. Replace with a more sophisticated function
-            float candidateHitPointDiff = length(basehitPoint - candidateReservoir.hitPoint);
-            if (candidateHitPointDiff > SpatialCandidateMovementThreshold) continue;
+            float hitPointDiff = length(baseReservoir.hitPoint - candidateReservoir.hitPoint);
+            float normalDiffDeg = angleBetweenNormals(baseReservoir.normal, candidateReservoir.normal);
+            if (hitPointDiff > SpatialHitPointDiffThreshold || dot(baseReservoir.normal, candidateReservoir.normal) > SpatialNormalsAngleThreshold) continue;
 
             if (weightedRand(candidateReservoir.chosenWeight, spatialReservoir.totWeights, state))
             {
                 spatialReservoir.dir = candidateReservoir.dir;
                 spatialReservoir.chosenWeight = candidateReservoir.chosenWeight;
                 spatialReservoir.hitPoint = candidateReservoir.hitPoint;
+                spatialReservoir.normal = candidateReservoir.normal;
             }
 
             spatialReservoir.totWeights += candidateReservoir.totWeights;
@@ -498,7 +518,7 @@ void SpatialReusePass (uint3 id : SV_DispatchThreadID)
 [numthreads(TN_RT,TN_RT,1)]
 void TransferToOriginal (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF) return; // || Depthbufefr  ! ! ! ! !  ! ! ! ! !
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF) return;
 
     uint pixelBaseIndex = GetPixelIndex(id.xy);
     uint candidateBaseIndex = pixelBaseIndex * RaysPerPixel;
@@ -515,7 +535,7 @@ void TransferToOriginal (uint3 id : SV_DispatchThreadID)
 [numthreads(TN_RT,TN_RT,1)]
 void TemporalReuse (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF) return;
+    if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF || FrameCount == 0) return;
     uint state = id.y * Resolution.x + id.x + FrameRand;
 
     // Trace ray(s) through the scene
@@ -546,7 +566,7 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
             thisFrameReservoir.hitPoint = lastFrameCandidate.hitPoint;
         }
         
-        // Average the weights and candidates with TemporalReuseWeight
+        // Average the weights and candidates with respect to TemporalReuseWeight
         thisFrameReservoir.totWeights = avg(thisFrameReservoir.totWeights * (1.0 - TemporalReuseWeight), 
                                             lastFrameCandidate.totWeights * TemporalReuseWeight);
         thisFrameReservoir.totCandidates = avg(thisFrameReservoir.totCandidates * (1.0 - TemporalReuseWeight), 
@@ -593,7 +613,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         bool invalidCandidate = (bounceCount == 1 && (material.brightness <= 0) < 0) || (bounceCount == 0 && dot(hitInfo.normal, ray.dir) < 0);
         if (invalidCandidate)
         {
-            Candidates[candidateIndex] = InitCandidateReservoir(float3(0, 0, 0), float3(0, 0, 0), 0, 0, 0);
+            Candidates[candidateIndex] = InitCandidateReservoir();
         }
 
         // Calculate new ray pos
