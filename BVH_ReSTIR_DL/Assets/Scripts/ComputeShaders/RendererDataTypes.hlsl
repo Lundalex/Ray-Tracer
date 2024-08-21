@@ -1,6 +1,6 @@
 // --- Rendered object types ---
 
-struct Tri
+struct Tri // Replace with vertex lookup & vertex buffers !!!
 {
     float3 vA;
     float3 vB;

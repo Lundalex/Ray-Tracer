@@ -193,6 +193,40 @@ public class TextureHelper : MonoBehaviour
             texture.Create();
         }
     }
+
+    // public static Color[,] ColorMapFromRenderTexture(RenderTexture rt)
+    // {
+    //     // Set the RenderTexture as the active RenderTexture
+    //     RenderTexture.active = rt;
+
+    //     // Create a Texture2D with the same dimensions as the RenderTexture
+    //     Texture2D texture2D = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+
+    //     // Read the pixels from the RenderTexture into the Texture2D
+    //     texture2D.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+    //     texture2D.Apply();
+
+    //     // Get all pixel data at once
+    //     Color[] pixelData = texture2D.GetPixels();
+
+    //     // Release the RenderTexture
+    //     RenderTexture.active = null;
+
+    //     // Convert Color[] to Color[,]
+    //     Color[,] colorMap = new Color[rt.width, rt.height];
+    //     for (int y = 0; y < rt.height; y++)
+    //     {
+    //         for (int x = 0; x < rt.width; x++)
+    //         {
+    //             colorMap[x, y] = pixelData[y * rt.width + x];
+    //         }
+    //     }
+
+    //     // Clean up the Texture2D
+    //     UnityEngine.Object.Destroy(texture2D);
+
+    //     return colorMap;
+    // }
 #endregion
 
 #region Modify Textures (3D)

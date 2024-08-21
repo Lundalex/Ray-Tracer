@@ -140,7 +140,7 @@ public class Main : MonoBehaviour
         ppShader.SetInt("FrameCount", FrameCount);
         FrameCount++;
         CameraMovement();
-        CameraPanning();
+        // CameraPanning();
 
         SetCameraOrientationAndTransform();
     }
@@ -431,6 +431,9 @@ public class Main : MonoBehaviour
         }
 
         Graphics.Blit(DebugViewEnable ? AccumulatedResultTexture : RTResultTexture, dest); // DebugOverlayTexture
+
+        // Color[,] colorMap = TextureHelper.ColorMapFromRenderTexture(DebugViewEnable ? AccumulatedResultTexture : RTResultTexture);
+        // Debug.Log(colorMap);
     }
 
     private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };
