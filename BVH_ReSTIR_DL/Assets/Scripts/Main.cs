@@ -32,6 +32,7 @@ public class Main : MonoBehaviour
     public int CandidateReservoirTestsNum;
     [Range(0, 5)] public int SpatialReuseIterations;
     [Range(0.0f, 1.0f)] public float TemporalReuseWeight;
+    public bool temp;
     public float PixelMovementThreshold;
     public float SpatialHitPointDiffThreshold;
     public float SpatialNormalsAngleThreshold;
@@ -259,7 +260,7 @@ public class Main : MonoBehaviour
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
         rtShader.SetInts("TexDims", texDims);
-        rtShader.SetTexture(1, "TestTexture", testTexture);
+        rtShader.SetTexture(4, "TestTexture", testTexture);
 
         Debug.Log("Internal program settings updated");
     }
@@ -284,7 +285,7 @@ public class Main : MonoBehaviour
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
         // Construct BVHEnable(s)
-        (BVs, Tris, SceneObjectDatas, LightObjects) = meshHelper.CreateSceneObjects();
+        (BVs, Tris, SceneObjectDatas, LightObjects) = meshHelper.CreateSceneObjects(temp);
         
         // Set BVHEnable data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);

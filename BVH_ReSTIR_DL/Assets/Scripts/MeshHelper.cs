@@ -317,7 +317,7 @@ public class MeshHelper : MonoBehaviour
         return emittingObjectsCount;
     }
 
-    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[]) CreateSceneObjects()
+    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[]) CreateSceneObjects(bool temp)
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
@@ -379,6 +379,7 @@ public class MeshHelper : MonoBehaviour
             Tri2[] sceneObjectTris = LoadedMeshes[loadedMeshesLookup[i]].meshTris;
             float3 minTemplate = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
             float3 maxTemplate = new float3(float.MinValue, float.MinValue, float.MinValue);
+
             for (int j = 0; j < sceneObjectTris.Length; j++)
             {
                 sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, minTemplate, maxTemplate);
@@ -406,8 +407,6 @@ public class MeshHelper : MonoBehaviour
             if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += loadedBoundingVolumes.Length;
             if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += loadedBoundingVolumes.Length;
         });
-
-        DebugUtils.LogStopWatch("BVH construction (scene objects)", ref stopwatch);
 
         // Replace existing scene BVH with new BVH data
         BoundingVolume[] newBoundingVolumes;
