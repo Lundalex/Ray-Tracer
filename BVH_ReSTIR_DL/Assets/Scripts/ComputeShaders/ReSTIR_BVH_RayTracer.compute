@@ -79,41 +79,6 @@ RWTexture2D<float4> DebugOverlay;
 RWTexture2D<float3> RayHitPointsA; // double buffer A
 RWTexture2D<float3> RayHitPointsB; // double buffer B
 
-Texture2D<float4> EnvironmentMap; // float4(r, g, b, brightness)
-const float2 EnvironmentMapTexDims;
-
-float4 SampleEnvironmentMap(float3 dir)
-{
-    dir = -dir;
-    // Compute spherical coordinates
-    float theta = atan2(dir.z, dir.x); // longitude
-    float phi = asin(dir.y);           // latitude
-    
-    float u = (theta / (2.0 * PI)) + 0.5;
-    float v = 0.5 - (phi / PI);
-
-    float2 texCoords = int2(float2(u, v) * EnvironmentMapTexDims);
-
-    int2 iTexCoords = int2(texCoords);
-    float2 fTexCoords = frac(texCoords);
-
-    int2 texel00 = iTexCoords % EnvironmentMapTexDims;
-    int2 texel10 = (iTexCoords + int2(1, 0)) % EnvironmentMapTexDims;
-    int2 texel01 = (iTexCoords + int2(0, 1)) % EnvironmentMapTexDims;
-    int2 texel11 = (iTexCoords + int2(1, 1)) % EnvironmentMapTexDims;
-
-    float4 col00 = EnvironmentMap[texel00];
-    float4 col10 = EnvironmentMap[texel10];
-    float4 col01 = EnvironmentMap[texel01];
-    float4 col11 = EnvironmentMap[texel11];
-
-    float4 col0 = lerp(col00, col10, fTexCoords.x);
-    float4 col1 = lerp(col01, col11, fTexCoords.x);
-    float4 col = lerp(col0, col1, fTexCoords.y);
-
-    return col;
-}
-
 float3 ApplyCameraTransform(float3 point2)
 {
     return mul(CameraTransform, point2);
@@ -462,7 +427,6 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
     // Cast first ray
     HitInfo hitInfo = GetRayCollision(ray, debugData);
     bool didHit = hitInfo.dst != 1.#INF;
-    hitInfo.incomingDir = ray.dir;
 
     // Generate a ray bounce direction candidate
     if (didHit) GenerateCandidatesDL2(hitInfo.normal, hitInfo.hitPoint, pixelIndex, state);
@@ -636,11 +600,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
 
     for (uint bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++) // MaxBounceCount = 1 for direct lighting 
     {
-        if (hitInfo.dst == 1.#INF)
-        {
-            traceInfo.directLight = SampleEnvironmentMap(ray.dir).xyz;
-            break;
-        }
+        if (hitInfo.dst == 1.#INF) break;
 
         bool didHit = hitInfo.dst != 1.#INF;
         
@@ -680,9 +640,9 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         }
 
         // Calculate new traceInfo values
-        float3 sampleCol = SampleTexColor(hitInfo.uv); // /SampleTexColor(hitInfo.uv)
+        float3 sampleCol = material.color; // /SampleTexColor(hitInfo.uv)
         float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
-        traceInfo.rayColor *= lerp(SampleTexColor(hitInfo.uv), material.specularColor, isSpecularBounce);
+        traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
         
         if (bounceCount == 0) traceInfo.directLight += emittedLight * traceInfo.rayColor;
         else traceInfo.indirectLight += emittedLight * traceInfo.rayColor;
@@ -721,7 +681,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
         // Return no color if initial ray trace missed
         if (hitInfo.dst == 1.#INF)
         {
-            Result[id.xy] = SampleEnvironmentMap(hitInfo.incomingDir);
+            Result[id.xy] = float4(0, 0, 0, 0);
             return;
         }
         // Return the emitted light of the first hit object if no further ray direction candidates are found
@@ -730,7 +690,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
             Material2 material = Materials[hitInfo.materialIndex];
     
             // Calculate new traceInfo values
-            float3 sampleCol = SampleTexColor(hitInfo.uv); // /SampleTexColor(hitInfo.uv)
+            float3 sampleCol = material.color; // /SampleTexColor(hitInfo.uv)
             float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
             float3 col = emittedLight;
     

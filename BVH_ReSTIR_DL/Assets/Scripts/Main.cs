@@ -32,7 +32,6 @@ public class Main : MonoBehaviour
     public int CandidateReservoirTestsNum;
     [Range(0, 5)] public int SpatialReuseIterations;
     [Range(0.0f, 1.0f)] public float TemporalReuseWeight;
-    public bool temp;
     public float PixelMovementThreshold;
     public float SpatialHitPointDiffThreshold;
     public float SpatialNormalsAngleThreshold;
@@ -92,7 +91,6 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
 
     public Texture2D testTexture;
-    public Texture2D environmentMapTexture;
 
     private void Start()
     {
@@ -261,12 +259,7 @@ public class Main : MonoBehaviour
         // Object Textures
         int[] texDims = new int[] { testTexture.width, testTexture.height };
         rtShader.SetInts("TexDims", texDims);
-        rtShader.SetTexture(4, "TestTexture", testTexture);
-
-        // Environment Map Texture
-        int[] environmentMapTexDims = new int[] { environmentMapTexture.width, environmentMapTexture.height };
-        rtShader.SetInts("EnvironmentMapTexDims", environmentMapTexDims);
-        rtShader.SetTexture(4, "EnvironmentMap", environmentMapTexture);
+        rtShader.SetTexture(1, "TestTexture", testTexture);
 
         Debug.Log("Internal program settings updated");
     }

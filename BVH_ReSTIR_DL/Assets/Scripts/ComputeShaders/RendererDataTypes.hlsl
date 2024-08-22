@@ -58,7 +58,6 @@ struct HitInfo
     float3 hitPoint;
     float2 uv;
     float3 normal;
-    float3 incomingDir;
     int materialIndex;
 };
 struct TriHitInfo
@@ -130,7 +129,6 @@ HitInfo InitHitInfo()
     hitInfo.hitPoint = -1;
     hitInfo.uv = 0;
     hitInfo.normal = 0;
-    hitInfo.incomingDir = 0;
     hitInfo.materialIndex = 0;
 
     return hitInfo;
