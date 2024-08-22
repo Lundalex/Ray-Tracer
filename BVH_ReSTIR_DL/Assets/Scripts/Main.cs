@@ -92,6 +92,7 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
 
     public Texture2D testTexture;
+    public Texture2D environmentMapTexture;
 
     private void Start()
     {
@@ -262,6 +263,11 @@ public class Main : MonoBehaviour
         rtShader.SetInts("TexDims", texDims);
         rtShader.SetTexture(4, "TestTexture", testTexture);
 
+        // Environment Map Texture
+        int[] environmentMapTexDims = new int[] { environmentMapTexture.width, environmentMapTexture.height };
+        rtShader.SetInts("EnvironmentMapTexDims", environmentMapTexDims);
+        rtShader.SetTexture(4, "EnvironmentMap", environmentMapTexture);
+
         Debug.Log("Internal program settings updated");
     }
 
@@ -285,7 +291,7 @@ public class Main : MonoBehaviour
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
 
         // Construct BVHEnable(s)
-        (BVs, Tris, SceneObjectDatas, LightObjects) = meshHelper.CreateSceneObjects(temp);
+        (BVs, Tris, SceneObjectDatas, LightObjects) = meshHelper.CreateSceneObjects();
         
         // Set BVHEnable data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
