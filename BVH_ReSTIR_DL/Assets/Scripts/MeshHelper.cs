@@ -379,6 +379,7 @@ public class MeshHelper : MonoBehaviour
             Tri2[] sceneObjectTris = LoadedMeshes[loadedMeshesLookup[i]].meshTris;
             float3 minTemplate = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
             float3 maxTemplate = new float3(float.MinValue, float.MinValue, float.MinValue);
+            
             for (int j = 0; j < sceneObjectTris.Length; j++)
             {
                 sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, minTemplate, maxTemplate);
