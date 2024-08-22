@@ -1,5 +1,5 @@
 // --- Rendered object types ---
-
+ 
 struct Tri // Replace with vertex lookup & vertex buffers !!!
 {
     float3 vA;
@@ -40,13 +40,15 @@ struct LightObject
 struct Material2
 {
     float3 color;
+    int2 texLoc;
+    int2 texDims;
     float3 specularColor;
     float brightness;
     float smoothness;
 };
-
+ 
 // --- Ray tracer structs ---
-
+ 
 struct Ray
 {
     float3 pos;
@@ -58,6 +60,7 @@ struct HitInfo
     float3 hitPoint;
     float2 uv;
     float3 normal;
+    float3 incomingDir;
     int materialIndex;
 };
 struct TriHitInfo
@@ -94,16 +97,16 @@ struct DebugData
     int triChecks;
     int bvChecks;
 };
-
+ 
 // --- Init functions ---
-
+ 
 Reservoir InitReservoir(int firstElementIndex, float firstElementWeight)
 {
     Reservoir reservoir;
     reservoir.chosenIndex = firstElementIndex;
     reservoir.chosenWeight = firstElementWeight;
     reservoir.totWeights = firstElementWeight;
-
+ 
     return reservoir;
 }
 Ray InitRay(float3 pos, float3 dir)
@@ -111,7 +114,7 @@ Ray InitRay(float3 pos, float3 dir)
     Ray ray;
     ray.pos = pos;
     ray.dir = dir;
-
+ 
     return ray;
 }
 Ray InitRay()
@@ -119,7 +122,7 @@ Ray InitRay()
     Ray ray;
     ray.pos = 0;
     ray.dir = 0;
-
+ 
     return ray;
 }
 HitInfo InitHitInfo()
@@ -129,8 +132,9 @@ HitInfo InitHitInfo()
     hitInfo.hitPoint = -1;
     hitInfo.uv = 0;
     hitInfo.normal = 0;
+    hitInfo.incomingDir = 0;
     hitInfo.materialIndex = 0;
-
+ 
     return hitInfo;
 }
 DebugData InitDebugData()
@@ -138,17 +142,19 @@ DebugData InitDebugData()
     DebugData debugData;
     debugData.triChecks = 0;
     debugData.bvChecks = 0;
-
+ 
     return debugData;
 }
 Material2 InitMaterial()
 {
     Material2 material;
     material.color = 0;
+    material.texLoc = 0;
+    material.texDims = 0;
     material.specularColor = 0;
     material.brightness = 0;
     material.smoothness = 0;
-
+ 
     return material;
 }
 CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float3 normal, float chosenWeight, float totWeights, int totCandidates)
@@ -160,7 +166,7 @@ CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float3 no
     candidateReservoir.chosenWeight = chosenWeight;
     candidateReservoir.totWeights = totWeights;
     candidateReservoir.totCandidates = totCandidates;
-
+ 
     return candidateReservoir;
 }
 CandidateReservoir InitCandidateReservoir()
@@ -172,6 +178,6 @@ CandidateReservoir InitCandidateReservoir()
     candidateReservoir.chosenWeight = 0;
     candidateReservoir.totWeights = 0;
     candidateReservoir.totCandidates = 0;
-
+ 
     return candidateReservoir;
 }

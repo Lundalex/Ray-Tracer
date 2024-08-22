@@ -12,6 +12,7 @@ using Resources;
 public class MeshHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
+    public Texture2D[] materialTextures;
     public int MaxDepthSceneBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
     public bool doReloadSceneBVH = true;
@@ -317,7 +318,13 @@ public class MeshHelper : MonoBehaviour
         return emittingObjectsCount;
     }
 
-    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[]) CreateSceneObjects()
+    public RenderTexture ConstructTextureAtlas()
+    {
+        int2 maxDims = new(16384,16384);
+        return TextureHelper.CreateTexture(maxDims, 3);
+    }
+
+    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[], RenderTexture) CreateSceneObjects()
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
@@ -449,6 +456,8 @@ public class MeshHelper : MonoBehaviour
             }
         }
 
-        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects);
+        RenderTexture textureAtlas = ConstructTextureAtlas();
+
+        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects, textureAtlas);
     }
 }
