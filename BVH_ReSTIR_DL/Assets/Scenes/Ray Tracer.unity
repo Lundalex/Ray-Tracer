@@ -137,7 +137,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
       propertyPath: MaxDepthBVH
-      value: 32
+      value: 24
       objectReference: {fileID: 0}
     - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
       propertyPath: MaterialIndex
@@ -281,13 +281,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1356186225}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.015198075, y: -0.1563652, z: 0.0011266626, w: 0.9875818}
-  m_LocalPosition: {x: 2, y: 0, z: 1}
+  m_LocalRotation: {x: 0, y: -0.5150381, z: 0, w: 0.85716736}
+  m_LocalPosition: {x: 10, y: 3, z: 7}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: -1.7, y: -18, z: 0.4}
+  m_LocalEulerAnglesHint: {x: 0, y: -62, z: 0}
 --- !u!114 &1356186229
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -302,7 +302,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   CameraMoveSpeed: 8
   CameraPanSpeed: 8
-  DebugViewEnable: 0
+  renderTarget: 0
   DebugMaxTriChecks: 10
   DebugMaxBVChecks: 100
   fieldOfView: 70
@@ -318,7 +318,7 @@ MonoBehaviour:
   SceneObjectReservoirTestsNum: 5
   TriReservoirTestsNum: 5
   CandidateReservoirTestsNum: 5
-  SpatialReuseIterations: 4
+  SpatialReuseIterations: 3
   TemporalCandidatesNum: 9
   SpatialReuseBlur: 3
   TemporalPrecisionThreshold: 0.000001
@@ -329,9 +329,9 @@ MonoBehaviour:
   SpatialNormalsAngleThreshold: 180
   DoVisibilityReuse: 1
   MatTypesInput1:
-  - x: 1
-    y: 1
-    z: 0
+  - x: -1
+    y: -1
+    z: -1
     w: 0
   - x: 0
     y: 1
@@ -340,7 +340,7 @@ MonoBehaviour:
   - x: 1
     y: 1
     z: 1
-    w: 1500
+    w: 15000
   MatTypesInput2:
   - x: 1
     y: 0
@@ -359,8 +359,7 @@ MonoBehaviour:
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
   shaderHelper: {fileID: 1356186230}
   meshHelper: {fileID: 1356186231}
-  testTexture: {fileID: 2800000, guid: b5c9c906578d8429583c124d56d45b4a, type: 3}
-  environmentMapTexture: {fileID: 2800000, guid: 19fe58fce6637d543a6bf457fe7d7f8a, type: 3}
+  EnvironmentMapTexture: {fileID: 2800000, guid: 19fe58fce6637d543a6bf457fe7d7f8a, type: 3}
 --- !u!114 &1356186230
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -389,6 +388,9 @@ MonoBehaviour:
   sceneObjects:
   - {fileID: 1740729473}
   - {fileID: 1707828470}
+  materialTextures:
+  - {fileID: 2800000, guid: e15914c9d03216746afefe8098cdb1e3, type: 3}
+  MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10
   SplitResolution: 5
   doReloadSceneBVH: 1
@@ -593,6 +595,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3892193409040073706, guid: 62fa4a21de9fcc847a5212fbf355d359, type: 3}
+      propertyPath: MaterialIndex
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 4662862440050356509, guid: 62fa4a21de9fcc847a5212fbf355d359, type: 3}
       propertyPath: m_LocalScale.x
       value: 7

@@ -13,11 +13,14 @@ public class MeshHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
     public Texture2D[] materialTextures;
+    public int MaxAtlasDims;
     public int MaxDepthSceneBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
     public bool doReloadSceneBVH = true;
     public Main m;
 
+    private Texture2D textureAtlas;
+    private Rect[] atlasRects;
     private SceneObjectData[] sceneObjectsData;
     private LightObject[] lightObjects;
     private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
@@ -60,11 +63,11 @@ public class MeshHelper : MonoBehaviour
                 tris[triCount].uvB = UVs[indexB];
                 tris[triCount].uvC = UVs[indexC];
             }
-            else // Temp!!!
+            else
             {
-                tris[triCount].uvA = new float2(0.2f, 0.23f);
-                tris[triCount].uvB = new float2(0.5f, 0.43f);
-                tris[triCount].uvC = new float2(0.28f, 0.87f);
+                tris[triCount].uvA = -1;
+                tris[triCount].uvB = -1;
+                tris[triCount].uvC = -1;
             }
             tris[triCount].CalcMin();
             tris[triCount].CalcMax();
@@ -318,13 +321,17 @@ public class MeshHelper : MonoBehaviour
         return emittingObjectsCount;
     }
 
-    public RenderTexture ConstructTextureAtlas()
+    public (Texture2D, Rect[]) ConstructTextureAtlas()
     {
-        int2 maxDims = new(16384,16384);
-        return TextureHelper.CreateTexture(maxDims, 3);
+        Texture2D atlas = new Texture2D(MaxAtlasDims, MaxAtlasDims, TextureFormat.RGBA32, false);
+        Rect[] rects = atlas.PackTextures(materialTextures, 1, MaxAtlasDims);
+        
+        UnityEngine.Debug.Log("Texture atlas constructed with " + rects.Length + " textures. Width: " + atlas.width + ". Height: " + atlas.height);
+
+        return (atlas, rects);
     }
 
-    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[], RenderTexture) CreateSceneObjects()
+    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[], Texture2D, Rect[]) CreateSceneObjects()
     {
         sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
         loadedMeshesLookup ??= new int[sceneObjects.Length];
@@ -456,8 +463,9 @@ public class MeshHelper : MonoBehaviour
             }
         }
 
-        RenderTexture textureAtlas = ConstructTextureAtlas();
+        // Pack material textures into a single atlas
+        if (textureAtlas == null) (textureAtlas, atlasRects) = ConstructTextureAtlas();
 
-        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects, textureAtlas);
+        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects, textureAtlas, atlasRects);
     }
 }

@@ -5,14 +5,14 @@ using System;
 // Import utils from Resources.cs
 using Resources;
 // Usage: Utils.(functionName)()
- 
+
 public class Main : MonoBehaviour
 {
     [Header("Camera interaction settings")]
     public float CameraMoveSpeed;
     public float CameraPanSpeed;
     [Header("Debug settings")]
-    public bool DebugViewEnable;
+    public RenderTargetSelect renderTarget;
     public int DebugMaxTriChecks;
     public int DebugMaxBVChecks;
     [Header("Render settings")]
@@ -51,6 +51,7 @@ public class Main : MonoBehaviour
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
+    public Texture2D EnvironmentMapTexture;
  
     // Script communication
     [NonSerialized] public bool DoUpdateSettings;
@@ -84,6 +85,8 @@ public class Main : MonoBehaviour
     private RenderTexture RayHitPointBTexture;
     private RenderTexture DepthBufferTexture;
     private RenderTexture NormalsBufferTexture;
+    private Texture2D TextureAtlas;
+    private Rect[] atlasRects;
  
     // Camera data record
     private Vector3 lastCameraPosition;
@@ -95,9 +98,6 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
     private Vector3 lastWorldSpaceCameraPos;
     private Matrix4x4 lastCameraTransform;
- 
-    public RenderTexture textureAtlas;
-    public Texture2D environmentMapTexture;
  
     private void Start()
     {
@@ -185,27 +185,27 @@ public class Main : MonoBehaviour
         }
     }
  
-private void SetCameraData()
-{
-    // Camera position
-    Vector3 worldSpaceCameraPos = transform.position;
-    if (lastWorldSpaceCameraPos == null) lastWorldSpaceCameraPos = worldSpaceCameraPos;
+    private void SetCameraData()
+    {
+        // Camera position
+        Vector3 worldSpaceCameraPos = transform.position;
+        if (lastWorldSpaceCameraPos == null) lastWorldSpaceCameraPos = worldSpaceCameraPos;
 
-    rtShader.SetVector("WorldSpaceCameraPos", worldSpaceCameraPos);
-    rtShader.SetVector("LastWorldSpaceCameraPos", lastWorldSpaceCameraPos);
- 
-    // Camera transform matrix
-    Matrix4x4 cameraTransform = transform.localToWorldMatrix;
+        rtShader.SetVector("WorldSpaceCameraPos", worldSpaceCameraPos);
+        rtShader.SetVector("LastWorldSpaceCameraPos", lastWorldSpaceCameraPos);
+    
+        // Camera transform matrix
+        Matrix4x4 cameraTransform = transform.localToWorldMatrix;
 
-    if (lastCameraTransform == Matrix4x4.zero) lastCameraTransform = cameraTransform;
+        if (lastCameraTransform == Matrix4x4.zero) lastCameraTransform = cameraTransform;
 
-    rtShader.SetMatrix("CameraTransform", cameraTransform);
-    rtShader.SetMatrix("LastCameraTransformInverse", lastCameraTransform.inverse);
+        rtShader.SetMatrix("CameraTransform", cameraTransform);
+        rtShader.SetMatrix("LastCameraTransformInverse", lastCameraTransform.inverse);
 
-    // Update last frame's camera data
-    lastWorldSpaceCameraPos = worldSpaceCameraPos;
-    lastCameraTransform = cameraTransform;
-}
+        // Update last frame's camera data
+        lastWorldSpaceCameraPos = worldSpaceCameraPos;
+        lastCameraTransform = cameraTransform;
+    }
  
     private void OnValidate()
     {
@@ -251,14 +251,14 @@ private void SetCameraData()
         rtShader.SetFloat("TemporalPrecisionThreshold", TemporalPrecisionThreshold);
  
         // Object Textures
-        int[] textureAtlasDims = new int[] { textureAtlas.width, textureAtlas.height };
+        int[] textureAtlasDims = new int[] { TextureAtlas.width, TextureAtlas.height };
         rtShader.SetInts("TextureAtlasDims", textureAtlasDims);
-        rtShader.SetTexture(4, "TextureAtlas", textureAtlas);
+        rtShader.SetTexture(4, "TextureAtlas", TextureAtlas);
  
         // Environment Map Texture
-        int[] environmentMapTexDims = new int[] { environmentMapTexture.width, environmentMapTexture.height };
+        int[] environmentMapTexDims = new int[] { EnvironmentMapTexture.width, EnvironmentMapTexture.height };
         rtShader.SetInts("EnvironmentMapTexDims", environmentMapTexDims);
-        rtShader.SetTexture(4, "EnvironmentMap", environmentMapTexture);
+        rtShader.SetTexture(4, "EnvironmentMap", EnvironmentMapTexture);
  
         Debug.Log("Internal program settings updated");
     }
@@ -279,13 +279,20 @@ private void SetCameraData()
                 smoothness = MatTypesInput2[i].x
             };
         }
+
+        // Construct BVH
+        (BVs, Tris, SceneObjectDatas, LightObjects, TextureAtlas, atlasRects) = meshHelper.CreateSceneObjects();
+
+        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length && i < atlasRects.Length; i++)
+        {
+            Material2s[i].texLoc = new int2((int)(atlasRects[i].x * TextureAtlas.width), (int)(atlasRects[i].y * TextureAtlas.height));
+            Material2s[i].texDims = new int2((int)(atlasRects[i].width * TextureAtlas.width), (int)(atlasRects[i].height * TextureAtlas.height));
+        }
+
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
- 
-        // Construct BVHEnable(s)
-        (BVs, Tris, SceneObjectDatas, LightObjects, textureAtlas) = meshHelper.CreateSceneObjects();
         
-        // Set BVHEnable data
+        // Set BVH data
         BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
         shaderHelper.SetBVBuffer(BVBuffer);
  
@@ -429,11 +436,38 @@ private void SetCameraData()
             RunReSTIRShader();
             RunPostProcessingShader();
         }
- 
-        Graphics.Blit(DebugViewEnable ? AccumulatedResultTexture : RTResultTexture, dest); // DebugOverlayTexture
- 
-        // Color[,] colorMap = TextureHelper.ColorMapFromRenderTexture(DebugViewEnable ? AccumulatedResultTexture : RTResultTexture);
-        // Debug.Log(colorMap);
+
+        // Render relected render target to the camera output
+        switch (renderTarget)
+        {
+            case RenderTargetSelect.RTResultTexture:
+                Graphics.Blit(RTResultTexture, dest);
+                break;
+            case RenderTargetSelect.AccumulatedResultTexture:
+                Graphics.Blit(AccumulatedResultTexture, dest);
+                break;
+            case RenderTargetSelect.DebugOverlayTexture:
+                Graphics.Blit(DebugOverlayTexture, dest);
+                break;
+            case RenderTargetSelect.DepthBufferTexture:
+                Graphics.Blit(DepthBufferTexture, dest);
+                break;
+            case RenderTargetSelect.NormalsBufferTexture:
+                Graphics.Blit(NormalsBufferTexture, dest);
+                break;
+            case RenderTargetSelect.EnvironmentMapTexture:
+                Graphics.Blit(EnvironmentMapTexture, dest);
+                break;
+            case RenderTargetSelect.TextureAtlas:
+                Graphics.Blit(TextureAtlas, dest);
+                break;
+            case RenderTargetSelect.RayHitPointATexture:
+                Graphics.Blit(RayHitPointATexture, dest);
+                break;
+            case RenderTargetSelect.RayHitPointBTexture:
+                Graphics.Blit(RayHitPointBTexture, dest);
+                break;
+        }
     }
  
     private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };

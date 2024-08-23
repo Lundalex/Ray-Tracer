@@ -296,7 +296,7 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
     return hitInfo;
 }
  
-float3 SampleTexColor(float2 uv, int2 texLoc, int2 texDims)
+float3 SampleTexColor(float2 uv, uint2 texLoc, uint2 texDims)
 {
     float2 texCoords = int2(uv * texDims);
  
@@ -712,10 +712,10 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         }
  
         // Calculate new traceInfo values
-        float3 sampleCol = material.color; // SampleTexColor(hitInfo.uv)
+        float3 sampleCol = all(material.color == -1) ? SampleTexColor(hitInfo.uv, material.texLoc, material.texDims) : material.color;
         accDst += hitInfo.dst;
         float3 emittedLight = sampleCol * material.brightness / sqr(accDst);
-        traceInfo.rayColor *= lerp(material.color, material.specularColor, isSpecularBounce);
+        traceInfo.rayColor *= lerp(sampleCol, material.specularColor, isSpecularBounce);
         
         if (bounceCount == 0) traceInfo.directLight += emittedLight * traceInfo.rayColor;
         else traceInfo.indirectLight += emittedLight * traceInfo.rayColor;
@@ -763,7 +763,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
             Material2 material = Materials[hitInfo.materialIndex];
     
             // Calculate new traceInfo values
-            float3 sampleCol = material.color; // /SampleTexColor(hitInfo.uv)
+            float3 sampleCol = all(material.color == -1) ? SampleTexColor(hitInfo.uv, material.texLoc, material.texDims) : material.color;
             float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
             float3 col = emittedLight;
     
