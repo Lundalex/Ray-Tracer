@@ -2,23 +2,32 @@
 
 #include "RendererResources.hlsl"
 
-const uint TrisNum;
+const uint TrianglesNum;
 
-RWStructuredBuffer<Tri> Tris;
+RWStructuredBuffer<Triangle> Triangles;
+RWStructuredBuffer<Vertex2> Vertices;
 RWStructuredBuffer<SceneObject> SceneObjects;
 
-float3 GetPlaneNormal (float3 a, float3 b, float3 c)
+float3 GetPlaneNormal (Triangle tri)
 {
-    float3 ab = b - a;
-    float3 ac = c - a;
+    float3 v0 = Vertices[tri.vertex0Index].pos;
+    float3 v1 = Vertices[tri.vertex1Index].pos;
+    float3 v2 = Vertices[tri.vertex2Index].pos;
+
+    float3 ab = v1 - v0;
+    float3 ac = v2 - v0;
 
     return normalize(cross(ab, ac));
 }
 
-float3 GetPlaneNormalTransformed (float3 a, float3 b, float3 c, float4x4 transform)
+float3 GetPlaneNormalTransformed (Triangle tri, float4x4 transform)
 {
-    float3 ab = b - a;
-    float3 ac = c - a;
+    float3 v0 = Vertices[tri.vertex0Index].pos;
+    float3 v1 = Vertices[tri.vertex1Index].pos;
+    float3 v2 = Vertices[tri.vertex2Index].pos;
+
+    float3 ab = v1 - v0;
+    float3 ac = v2 - v0;
 
     float3 localNormal = normalize(cross(ab, ac));
 
@@ -31,11 +40,11 @@ float3 GetPlaneNormalTransformed (float3 a, float3 b, float3 c, float4x4 transfo
 void CalcTriNormals (uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
-    if (i >= TrisNum) return;
+    if (i >= TrianglesNum) return;
 
-    Tri tri = Tris[i];
+    Triangle tri = Triangles[i];
 
-    tri.worldNormal = GetPlaneNormalTransformed(tri.vA, tri.vB, tri.vC, SceneObjects[tri.parentIndex].localToWorldMatrix);
+    tri.localNormal = GetPlaneNormal(tri);
 
-    Tris[i] = tri;
+    Triangles[i] = tri;
 }

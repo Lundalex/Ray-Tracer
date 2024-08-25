@@ -6,13 +6,13 @@ public class SceneObjectSettings : MonoBehaviour
     public int MaterialIndex;
     public int MaxDepthBVH;
     private Main m;
-    private Vector3 lastCameraPosition;
-    private Quaternion lastCameraRotation;
+    private Vector3 lastPosition;
+    private Quaternion lastRotation;
 
     private void Start()
     {
-        lastCameraPosition = transform.position;
-        lastCameraRotation = transform.rotation;
+        lastPosition = transform.position;
+        lastRotation = transform.rotation;
     }
 
     private void OnValidate()
@@ -22,16 +22,16 @@ public class SceneObjectSettings : MonoBehaviour
             m = GameObject.Find("Main Camera").GetComponent<Main>();
         }
 
-        if (m.ProgramStarted) { m.DoUpdateSettings = true; m.DoResetBufferData = true; }
+        if (m.ProgramStarted) { m.DoUpdateSettings = true;  m.DoReloadData = true; }
     }
     private void LateUpdate()
     {
-        if (transform.position != lastCameraPosition || transform.rotation != lastCameraRotation)
+        if (transform.position != lastPosition || transform.rotation != lastRotation)
         {
             m.DoUpdateSettings = true;
-            m.DoResetBufferData = true;
-            lastCameraPosition = transform.position;
-            lastCameraRotation = transform.rotation;
+            m.DoReloadData = true;
+            lastPosition = transform.position;
+            lastRotation = transform.rotation;
         }
     }
 }

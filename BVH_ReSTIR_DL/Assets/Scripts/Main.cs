@@ -35,11 +35,11 @@ public class Main : MonoBehaviour
     public int SpatialReuseBlur;
     public float TemporalPrecisionThreshold;
     [Range(0.0f, 1.0f)] public float TemporalReuseWeight;
-    public bool temp;
     public float PixelMovementThreshold;
     public float SpatialHitPointDiffThreshold;
     public float SpatialNormalsAngleThreshold;
     public bool DoVisibilityReuse;
+    public float VisibilityReuseThreshold;
  
     [Header("Material settings")]
     public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
@@ -55,7 +55,7 @@ public class Main : MonoBehaviour
  
     // Script communication
     [NonSerialized] public bool DoUpdateSettings;
-    [NonSerialized] public bool DoResetBufferData;
+    [NonSerialized] public bool DoReloadData = false;
     [NonSerialized] public bool ProgramStarted = false;
  
     // Private variables
@@ -65,13 +65,15 @@ public class Main : MonoBehaviour
     private int RayTracerThreadSize = 8; // /32
     private int PostProcesserThreadSize = 8; // /32
     private int PreCalcThreadSize = 256;
-    public Material2[] Material2s;
-    public Tri[] Tris;
-    public SceneObjectData[] SceneObjectDatas;
-    public LightObject[] LightObjects;
-    public BoundingVolume[] BVs;
+    [NonSerialized] public Material2[] Material2s;
+    [NonSerialized] public RenderTriangle[] RenderTriangles;
+    [NonSerialized] public Vertex[] Vertices;
+    [NonSerialized] public SceneObjectData[] SceneObjectDatas;
+    [NonSerialized] public LightObject[] LightObjects;
+    [NonSerialized] public RenderBV[] BVs;
     private ComputeBuffer BVBuffer;
-    private ComputeBuffer TriBuffer;
+    private ComputeBuffer RenderTriangleBuffer;
+    private ComputeBuffer VertexBuffer;
     private ComputeBuffer SceneObjectDataBuffer;
     private ComputeBuffer LightObjectBuffer;
     private ComputeBuffer MaterialBuffer;
@@ -86,7 +88,7 @@ public class Main : MonoBehaviour
     private RenderTexture DepthBufferTexture;
     private RenderTexture NormalsBufferTexture;
     private Texture2D TextureAtlas;
-    private Rect[] atlasRects;
+    private Rect[] AtlasRects;
  
     // Camera data record
     private Vector3 lastCameraPosition;
@@ -128,9 +130,8 @@ public class Main : MonoBehaviour
             FrameStep = false;
  
             UpdatePerFrame();
-            rtShader.SetBool("TEMP", temp);
  
-            if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(DoResetBufferData); DoResetBufferData = false; }
+            if (DoUpdateSettings) { DoUpdateSettings = false; UpdateSettings(DoReloadData); DoReloadData = false; }
         }
         else RenderThisFrame = false;
     }
@@ -209,7 +210,7 @@ public class Main : MonoBehaviour
  
     private void OnValidate()
     {
-        if (ProgramStarted) { DoUpdateSettings = true; DoResetBufferData = true; }
+        if (ProgramStarted) { DoUpdateSettings = true; DoReloadData = true; }
     }
  
     private void UpdateSettings(bool resetBufferData)
@@ -249,6 +250,7 @@ public class Main : MonoBehaviour
         rtShader.SetBool("DoVisibilityReuse", DoVisibilityReuse);
         rtShader.SetInt("TemporalCandidatesNum", TemporalCandidatesNum);
         rtShader.SetFloat("TemporalPrecisionThreshold", TemporalPrecisionThreshold);
+        rtShader.SetFloat("VisibilityReuseThreshold", VisibilityReuseThreshold);
  
         // Object Textures
         int[] textureAtlasDims = new int[] { TextureAtlas.width, TextureAtlas.height };
@@ -281,26 +283,28 @@ public class Main : MonoBehaviour
         }
 
         // Construct BVH
-        (BVs, Tris, SceneObjectDatas, LightObjects, TextureAtlas, atlasRects) = meshHelper.CreateSceneObjects();
+        (BVs, Vertices, RenderTriangles, SceneObjectDatas, LightObjects, TextureAtlas, AtlasRects) = meshHelper.ConstructScene();
 
-        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length && i < atlasRects.Length; i++)
+        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length && i < AtlasRects.Length; i++)
         {
-            Material2s[i].texLoc = new int2((int)(atlasRects[i].x * TextureAtlas.width), (int)(atlasRects[i].y * TextureAtlas.height));
-            Material2s[i].texDims = new int2((int)(atlasRects[i].width * TextureAtlas.width), (int)(atlasRects[i].height * TextureAtlas.height));
+            Material2s[i].texLoc = new int2((int)(AtlasRects[i].x * TextureAtlas.width), (int)(AtlasRects[i].y * TextureAtlas.height));
+            Material2s[i].texDims = new int2((int)(AtlasRects[i].width * TextureAtlas.width), (int)(AtlasRects[i].height * TextureAtlas.height));
         }
 
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
         shaderHelper.SetMaterialBuffer(MaterialBuffer);
         
         // Set BVH data
-        BVBuffer = ComputeHelper.CreateStructuredBuffer<BoundingVolume>(BVs);
+        BVBuffer = ComputeHelper.CreateStructuredBuffer<RenderBV>(BVs);
         shaderHelper.SetBVBuffer(BVBuffer);
  
         // Set SceneObjects & Tris data
         SceneObjectDataBuffer = ComputeHelper.CreateStructuredBuffer<SceneObjectData>(SceneObjectDatas);
         shaderHelper.SetSceneObjectDataBuffer(SceneObjectDataBuffer);
-        TriBuffer = ComputeHelper.CreateStructuredBuffer<Tri>(Tris);
-        shaderHelper.SetTriBuffer(TriBuffer);
+        RenderTriangleBuffer = ComputeHelper.CreateStructuredBuffer<RenderTriangle>(RenderTriangles);
+        shaderHelper.SetTriBuffer(RenderTriangleBuffer);
+        VertexBuffer = ComputeHelper.CreateStructuredBuffer<Vertex>(Vertices);
+        shaderHelper.SetVertexBuffer(VertexBuffer);
         RunPreCalcShader();
  
         // Set LightObjects data
@@ -391,7 +395,7 @@ public class Main : MonoBehaviour
  
     private void RunPreCalcShader()
     {
-        ComputeHelper.DispatchKernel(pcShader, "CalcTriNormals", Tris.Length, PreCalcThreadSize);
+        ComputeHelper.DispatchKernel(pcShader, "CalcTriNormals", RenderTriangles.Length, PreCalcThreadSize);
     }
  
     private void SpatialReuse()
@@ -470,11 +474,12 @@ public class Main : MonoBehaviour
         }
     }
  
-    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, TriBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };
+    private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, RenderTriangleBuffer, VertexBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };
  
     private void OnDestroy()
     {
         ComputeHelper.Release(AllBuffers());
+        DepthBufferTexture.Release(); // Test release. 9undisposed -> works
     }
  
     // --- Test ---

@@ -7,6 +7,8 @@ using Debug = UnityEngine.Debug;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Security.Cryptography;
 
 namespace Resources
 {
@@ -63,25 +65,6 @@ namespace Resources
             return new float3(posX, posY, posZ);
         }
 
-        public static Tri[] TrisFromTri2s(Tri2[] tri2s)
-        {
-            Tri[] tris = new Tri[tri2s.Length];
-            for (int i = 0; i < tri2s.Length; i++)
-            {
-                tris[i] = new Tri
-                {
-                    vA = tri2s[i].vA,
-                    vB = tri2s[i].vB,
-                    vC = tri2s[i].vC,
-                    uvA = tri2s[i].uvA,
-                    uvB = tri2s[i].uvB,
-                    uvC = tri2s[i].uvC
-                };
-            }
-
-            return tris;
-        }
-
         public static Matrix4x4 CreateWorldToLocalMatrix(Vector3 position, Vector3 rotation, Vector3 scale)
         {
             // Translation matrix
@@ -104,27 +87,60 @@ namespace Resources
             return worldToLocalMatrix;
         }
 
-        public static bool AreMeshesEqual(Mesh meshA, Mesh meshB)
+        // Hash key generation from Mesh
+        public static string GetMeshKey(Mesh mesh)
         {
-            // Early exit if vertex count or triangle count differs
-            if (meshA.vertexCount != meshB.vertexCount || meshA.triangles.Length != meshB.triangles.Length)
+            if (mesh == null) return string.Empty;
+
+            // Convert mesh data to strings or byte arrays
+            StringBuilder sb = new StringBuilder();
+
+            int i = 0;
+            foreach (var vertex in mesh.vertices)
             {
-                return false;
+                sb.Append(vertex.x).Append(vertex.y).Append(vertex.z);
+                if (i++ >= 10) break;
             }
 
-            // Compare vertices
-            if (!AreArraysEqual(meshA.vertices, meshB.vertices))
+            i = 0;
+            foreach (var normal in mesh.normals)
             {
-                return false;
+                sb.Append(normal.x).Append(normal.y).Append(normal.z);
+                if (i++ >= 10) break;
             }
 
-            // Compare triangles
-            if (!AreArraysEqual(meshA.triangles, meshB.triangles))
+            i = 0;
+            foreach (var uv in mesh.uv)
             {
-                return false;
+                sb.Append(uv.x).Append(uv.y);
+                if (i++ >= 10) break;
             }
 
-            return true;
+            i = 0;
+            foreach (var triangle in mesh.triangles)
+            {
+                sb.Append(triangle);
+                if (i++ >= 10) break;
+            }
+
+            // Convert the string builder content to a byte array
+            byte[] meshDataBytes = Encoding.UTF8.GetBytes(sb.ToString());
+
+            // Hash the byte array
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hashBytes = sha256.ComputeHash(meshDataBytes);
+                StringBuilder hashString = new StringBuilder();
+
+                // Convert hash bytes to a hexadecimal string
+                for (int j = 0; j < hashBytes.Length; j++)
+                {
+                    hashString.Append(hashBytes[j].ToString("x2"));
+                }
+
+                // Return the hexadecimal string as the mesh key
+                return hashString.ToString();
+            }
         }
 
         // Helper method to compare arrays
@@ -146,20 +162,18 @@ namespace Resources
             return true;
         }
 
-        public static int GetMeshIndex(List<(Mesh mesh, Tri2[] meshTris, int triStartIndex, int bvStartIndex)> meshArray, Mesh meshToCheck)
+        public static int GetMeshIndex(List<MeshData> meshArray, string meshKeyToCheck)
         {
             for (int i = 0; i < meshArray.Count; i++)
             {
-                if (AreMeshesEqual(meshArray[i].mesh, meshToCheck)) return i;
+                if (meshArray[i].meshKey == meshKeyToCheck) return i;
             }
             return -1;
         }
 
         public static void RemoveFromEndOfArray<T>(ref T[] originalArray, int x)
         {
-            // Use Take to get a new array without the last x elements
-            T[] newArray = originalArray.Take(originalArray.Length - x).ToArray();
-            originalArray = newArray;
+            Array.Resize(ref originalArray, originalArray.Length - x);
         }
     }
 

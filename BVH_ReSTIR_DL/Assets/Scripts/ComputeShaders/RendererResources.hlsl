@@ -113,34 +113,6 @@ float2 randPointInCircle(inout uint state)
     return pointOnCircle * sqrt(randNormalized(state));
 }
 
-float GetTriArea(Tri tri)
-{
-    float3 ab = tri.vB - tri.vA;
-    float3 ac = tri.vC - tri.vA;
-    float3 crossProduct = cross(ab, ac);
-    float area = length(crossProduct) * 0.5;
-    return area;
-}
-
-float3 GetRandWorldPointTri(Tri tri, float4x4 localToWorldMatrix, inout uint state)
-{
-    float r1 = randNormalized(state);
-    float r2 = randNormalized(state);
-
-    // Ensure the point lies within the triangle
-    if (r1 + r2 > 1.0)
-    {
-        r1 = 1.0 - r1;
-        r2 = 1.0 - r2;
-    }
-
-    float3 localPoint = tri.vA * (1.0 - r1 - r2) + tri.vB * r1 + tri.vC * r2;
-
-    float3 worldPoint = mul(localToWorldMatrix, float4(localPoint, 1.0)).xyz;
-
-    return worldPoint;
-}
-
 float angleBetweenNormals(float3 a, float3 b)
 {
     float dotProduct = dot(a, b);

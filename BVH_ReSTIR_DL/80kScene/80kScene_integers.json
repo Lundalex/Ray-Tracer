@@ -1,0 +1,16 @@
+{
+    "array": [
+        {
+            "Key": "maxBVHDepth",
+            "Value": 18
+        },
+        {
+            "Key": "emittingObjectsNum",
+            "Value": 1
+        },
+        {
+            "Key": "sceneBVHStartIndex",
+            "Value": 18522
+        }
+    ]
+}

@@ -7,123 +7,139 @@ using System.Threading.Tasks;
 
 // Import utils from Resources.cs
 using Resources;
+using System;
 // Usage: Utils.(functionName)()
 
 public class MeshHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
     public Texture2D[] materialTextures;
+    public bool DesignatedVertices;
     public int MaxAtlasDims;
     public int MaxDepthSceneBVH;
     public int SplitResolution; // ex. 10 -> Each BV split will test 10 increments for each component x,y,z (30 tests total)
-    public bool doReloadSceneBVH = true;
+    public string FileName;
+    public BVUpdateMode BVUpdateModeSelect;
+    public DataMode FileModeSelect;
+    public ExtensionMode ExtensionModeSelect;
     public Main m;
 
     private Texture2D textureAtlas;
-    private Rect[] atlasRects;
-    private SceneObjectData[] sceneObjectsData;
-    private LightObject[] lightObjects;
-    private BoundingVolume[] loadedBoundingVolumes = new BoundingVolume[0];
-    private int2[] loadedComponentDatas = new int2[0];
-    private List<(Mesh mesh, Tri2[] meshTris, int componentStartIndex, int bvStartIndex)> LoadedMeshes = new();
-    private Tri[] loadedTris = new Tri[0];
-    private int[] loadedMeshesLookup;
-    private int lastSceneBVHLength = 0;
+    private Rect[] AtlasRects;
+    private SceneObjectData[] SceneObjectDatas;
+    private LightObject[] LightObjects;
+    private RenderBV[] LoadedBVs = new RenderBV[0];
+    private int2[] LoadedComponentDatas = new int2[0];
+    private List<MeshData> LoadedMeshes = new();
+    private Vertex[] LoadedVertices = new Vertex[0];
+    private Triangle[] LoadedTriangles = new Triangle[0];
+    private RenderTriangle[] RenderTriangles;
+    private int[] LoadedMeshesLookup;
+    private int LastSceneBVHLength = 0;
+    private int LoadedVerticesNum;
 
     private void OnValidate()
     {
         if (m.ProgramStarted) m.DoUpdateSettings = true;
     }
-    public Tri2[] LoadMesh(Mesh mesh)
+    public (Vertex[], Triangle[]) LoadMesh(Mesh mesh, int baseVertexIndex)
     {
-        Vector3[] vertices = mesh.vertices;
-        Vector2[] UVs = mesh.uv;
-        int[] triangles = mesh.triangles;
-        int triNum = triangles.Length / 3;
-        bool containsUVs = UVs.Length > 0;
+        bool containsUVs = mesh.uv.Length > 0;
 
-        // Set tris data
-        Tri2[] tris = new Tri2[triNum];
-        for (int triCount = 0; triCount < triNum; triCount++)
+        Vector3[] meshVertices = mesh.vertices;
+        Vector2[] meshUVs = mesh.uv;
+        int[] meshTriangles = mesh.triangles;
+
+        // Load vertices
+        Vertex[] vertices = new Vertex[mesh.vertices.Length];
+        Parallel.For(0, vertices.Length, i =>
         {
-            int triCount3 = 3 * triCount;
-            int indexA = triangles[triCount3];
-            int indexB = triangles[triCount3 + 1];
-            int indexC = triangles[triCount3 + 2];
-
-            tris[triCount] = new Tri2
+            vertices[i] = new Vertex
             {
-                vA = vertices[indexA],
-                vB = vertices[indexB],
-                vC = vertices[indexC],
+                pos = meshVertices[i],
+                uv = containsUVs ? meshUVs[i] : -1
             };
-            if (containsUVs)
+        });
+
+        // Load triangles
+        int trianglesNum = mesh.triangles.Length / 3;
+        Triangle[] triangles = new Triangle[trianglesNum];
+        Parallel.For(0, trianglesNum, i =>
+        {
+            int baseIndex = 3 * i;
+            Triangle triangle = new Triangle
             {
-                tris[triCount].uvA = UVs[indexA];
-                tris[triCount].uvB = UVs[indexB];
-                tris[triCount].uvC = UVs[indexC];
-            }
-            else
+                vertex0Index = meshTriangles[baseIndex] + baseVertexIndex,
+                vertex1Index = meshTriangles[baseIndex + 1] + baseVertexIndex,
+                vertex2Index = meshTriangles[baseIndex + 2] + baseVertexIndex
+            };
+            triangle.Initialise(vertices, baseVertexIndex);
+
+            triangles[i] = triangle;
+        });
+
+        // Create designated vertices for each triangle. Inefficient for memory usage, but may lead to improved memory coherancy.
+        if (DesignatedVertices)
+        {
+            Vertex[] designatedVertices = new Vertex[3 * trianglesNum];
+            Parallel.For(0, trianglesNum, i =>
             {
-                tris[triCount].uvA = -1;
-                tris[triCount].uvB = -1;
-                tris[triCount].uvC = -1;
-            }
-            tris[triCount].CalcMin();
-            tris[triCount].CalcMax();
+                int baseIndex = 3 * i;
+                Triangle triangle = triangles[i];
+                designatedVertices[baseIndex] = vertices[triangle.vertex0Index - baseVertexIndex];
+                designatedVertices[baseIndex + 1] = vertices[triangle.vertex1Index - baseVertexIndex];
+                designatedVertices[baseIndex + 2] = vertices[triangle.vertex2Index - baseVertexIndex];
+
+                triangle.vertex0Index = baseVertexIndex + baseIndex;
+                triangle.vertex1Index = baseVertexIndex + baseIndex + 1;
+                triangle.vertex2Index = baseVertexIndex + baseIndex + 2;
+
+                triangles[i] = triangle;
+            });
+
+            return (designatedVertices, triangles);
         }
 
-        return tris;
+        return (vertices, triangles);
     }
-    private float3 GetMin<T>(T[] components) where T : BVHComponent
+
+    private float3 GetMin<T>(T[] components) where T : IBVHComponent
     {
         float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-
         foreach (var component in components)
         {
-            min.x = Mathf.Min(min.x, component.GetMin().x);
-            min.y = Mathf.Min(min.y, component.GetMin().y);
-            min.z = Mathf.Min(min.z, component.GetMin().z);
+            min = math.min(min, component.GetMin());
         }
 
         return min;
     }
-    private float3 GetMin<T>(List<T> components) where T : BVHComponent
+    private float3 GetMin<T>(List<T> components) where T : IBVHComponent
     {
         float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-
         foreach (var component in components)
         {
-            min.x = Mathf.Min(min.x, component.GetMin().x);
-            min.y = Mathf.Min(min.y, component.GetMin().y);
-            min.z = Mathf.Min(min.z, component.GetMin().z);
+            min = math.min(min, component.GetMin());
         }
 
         return min;
     }
 
-    private float3 GetMax<T>(T[] components) where T : BVHComponent
+    private float3 GetMax<T>(T[] components) where T : IBVHComponent
     {
         float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
-
         foreach (var component in components)
         {
-            max.x = Mathf.Max(max.x, component.GetMax().x);
-            max.y = Mathf.Max(max.y, component.GetMax().y);
-            max.z = Mathf.Max(max.z, component.GetMax().z);
+            max = math.max(max, component.GetMax());
         }
 
         return max;
     }
-    private float3 GetMax<T>(List<T> components) where T : BVHComponent
+    private float3 GetMax<T>(List<T> components) where T : IBVHComponent
     {
         float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
-
         foreach (var component in components)
         {
-            max.x = Mathf.Max(max.x, component.GetMax().x);
-            max.y = Mathf.Max(max.y, component.GetMax().y);
-            max.z = Mathf.Max(max.z, component.GetMax().z);
+            max = math.max(max, component.GetMax());
         }
 
         return max;
@@ -140,7 +156,7 @@ public class MeshHelper : MonoBehaviour
         return area;
     }
 
-    float GetCost<T>(List<T> componentsChildA, List<T> componentsChildB) where T : BVHComponent
+    float GetCost<T>(List<T> componentsChildA, List<T> componentsChildB) where T : IBVHComponent
     {
         float costA = GetBoxArea(GetMin(componentsChildA), GetMax(componentsChildA)) * componentsChildA.Count;
         float costB = GetBoxArea(GetMin(componentsChildB), GetMax(componentsChildB)) * componentsChildB.Count;
@@ -149,32 +165,35 @@ public class MeshHelper : MonoBehaviour
         return totCost;
     }
 
-    private void SwapPair<T>(ref T[] array, int indexA, int indexB) where T : BVHComponent => (array[indexB], array[indexA]) = (array[indexA], array[indexB]);
+    private void SwapPair<T>(ref T[] array, int indexA, int indexB) where T : IBVHComponent => (array[indexB], array[indexA]) = (array[indexA], array[indexB]);
 
-    private int DivideIntoSubGroupsRef<T>(ref T[] components, int axis, float3 splitCoord, int componentStart, int totComponents) where T : BVHComponent
+    private int DivideIntoSubGroupsRef<T>(ref T[] components, int axis, float3 splitCoord, int componentStart, int totComponents) where T : IBVHComponent
     {
         int highestIndexA = componentStart - 1;
         int countA = 0;
         for (int componentIndex = componentStart; componentIndex < componentStart + totComponents; componentIndex++)
         {
             float3 pos = components[componentIndex].GetMid();
-            if ((axis == 0 && pos.x < splitCoord.x) ||
-                (axis == 1 && pos.y < splitCoord.y) ||
-                (axis == 2 && pos.z < splitCoord.z))
+            bool isInGroupA = axis switch
+            {
+                0 => pos.x < splitCoord.x,
+                1 => pos.y < splitCoord.y,
+                2 => pos.z < splitCoord.z,
+                _ => false
+            };
+            if (isInGroupA)
             {
                 highestIndexA++;
                 countA++;
-                if (highestIndexA != componentIndex)
-                {
-                    SwapPair(ref components, highestIndexA, componentIndex);
-                }
+                
+                if (highestIndexA != componentIndex) SwapPair(ref components, highestIndexA, componentIndex);
             }
         }
 
         return countA;
     }
 
-    private (List<T>, List<T>) DivideIntoSubGroupsCopy<T>(T[] components, int axis, float3 splitCoord, int componentStart, int totComponent) where T : BVHComponent
+    private (List<T>, List<T>) DivideIntoSubGroupsCopy<T>(T[] components, int axis, float3 splitCoord, int componentStart, int totComponent) where T : IBVHComponent
     {
         List<T> componentsChildA = new List<T>();
         List<T> componentsChildB = new List<T>();
@@ -182,22 +201,21 @@ public class MeshHelper : MonoBehaviour
         for (int componentIndex = componentStart; componentIndex < componentStart + totComponent; componentIndex++)
         {
             float3 pos = components[componentIndex].GetMid();
-            if ((axis == 0 && pos.x < splitCoord.x) ||
-                (axis == 1 && pos.y < splitCoord.y) ||
-                (axis == 2 && pos.z < splitCoord.z))
+            bool isInGroupA = axis switch
             {
-                componentsChildA.Add(components[componentIndex]);
-            }
-            else
-            {
-                componentsChildB.Add(components[componentIndex]);
-            }
+                0 => pos.x < splitCoord.x,
+                1 => pos.y < splitCoord.y,
+                2 => pos.z < splitCoord.z,
+                _ => false
+            };
+            if (isInGroupA) componentsChildA.Add(components[componentIndex]);
+            else componentsChildB.Add(components[componentIndex]);
         }
 
         return (componentsChildA, componentsChildB);
     }
 
-    private int RecursivelySplitBV<T>(ref List<BV> BVs, ref T[] components, int bvParentIndex, BV bvParent, int maxDepth, int depth = 0) where T : BVHComponent
+    private int RecursivelySplitBV<T>(ref List<BV> BVs, ref T[] components, int bvParentIndex, BV bvParent, int maxDepth, int depth = 0) where T : IBVHComponent
     {
         depth += 1;
         if (depth >= maxDepth) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
@@ -225,10 +243,10 @@ public class MeshHelper : MonoBehaviour
             }
         }
 
-        // No valid split found (probably only 1 or 2 components
+        // End recursion if no valid split was found
         if (leastCostSplit.axis == -1) { BVs[bvParentIndex].SetLeaf(); return bvParentIndex; }
 
-        // Divide the bounding box using the best tried split
+        // Otherwise, split the bounding box
         int countA = DivideIntoSubGroupsRef(ref components, leastCostSplit.axis, leastCostSplit.splitCoord, bvParent.componentStart, bvParent.totComponents);
 
         // Get components for either child
@@ -239,8 +257,13 @@ public class MeshHelper : MonoBehaviour
         int furthestChildIndex = bvParentIndex;
         if (componentsBestChildA.Count != 0)
         {
+            // Add childIndexA to parent BV
             int childIndexA = bvParentIndex + 1;
-            BVs[bvParentIndex].childIndexA = childIndexA;
+            BV parentBV = BVs[bvParentIndex];
+            parentBV.childIndexA = childIndexA;
+            BVs[bvParentIndex] = parentBV;
+
+            // Call RecursivelySplitBV() for child A
             BVs.Add(new BV(GetMin(componentsBestChildA), GetMax(componentsBestChildA), bvParent.componentStart, componentsBestChildA.Count));
             DebugUtils.ChildIndexValidation(childIndexA, BVs.Count);
             furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexA, BVs[childIndexA], maxDepth, depth);
@@ -249,8 +272,13 @@ public class MeshHelper : MonoBehaviour
         // Recursively split child B
         if (componentsBestChildB.Count != 0)
         {
+            // Add childIndexB to parent BV
             int childIndexB = furthestChildIndex + 1;
-            BVs[bvParentIndex].childIndexB = childIndexB;
+            BV parentBV = BVs[bvParentIndex];
+            parentBV.childIndexB = childIndexB;
+            BVs[bvParentIndex] = parentBV;
+
+            // Call RecursivelySplitBV() for child B
             BVs.Add(new BV(GetMin(componentsBestChildB), GetMax(componentsBestChildB), bvParent.componentStart + componentsBestChildA.Count, componentsBestChildB.Count));
             DebugUtils.ChildIndexValidation(childIndexB, BVs.Count);
             furthestChildIndex = RecursivelySplitBV(ref BVs, ref components, childIndexB, BVs[childIndexB], maxDepth, depth);
@@ -260,37 +288,66 @@ public class MeshHelper : MonoBehaviour
         return furthestChildIndex;
     }
 
-    private (int, int) ConstructBVH(ref BoundingVolume[] boundingVolumes, ref int2[] componentDatas, Tri2[] newTris, ref Tri[] tris, int maxDepth)
+    private (int, int) ConstructBVH(ref RenderBV[] loadedBVs, ref Triangle[] loadedTriangles, ref Vertex[] loadedVertices, ref int2[] loadedComponentDatas, Vertex[] newVertices, Triangle[] newTriangles, int maxDepthBVH)
     {
-        float3 objectMin = GetMin(newTris);
-        float3 objectMax = GetMax(newTris);
-        List<BV> newBVs = new List<BV> { new BV(objectMin, objectMax, 0, newTris.Length, 1, 2) };
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        float3 objectMin = GetMin(newTriangles);
+        float3 objectMax = GetMax(newTriangles);
+        List<BV> newBVs = new List<BV> { new BV(objectMin, objectMax, 0, newTriangles.Length, 1, 2) };
 
         // Construct the BVH
-        Stopwatch stopwatch = Stopwatch.StartNew();
-        RecursivelySplitBV(ref newBVs, ref newTris, 0, newBVs[0], maxDepth);
+        RecursivelySplitBV(ref newBVs, ref newTriangles, 0, newBVs[0], maxDepthBVH);
 
-        int bvLength = boundingVolumes.Length;
-        int trisLength = tris.Length;
+        int loadedTrianglesLength = loadedTriangles.Length;
+        int loadedBVsLength = loadedBVs.Length;
         Parallel.For(0, newBVs.Count, i =>
         {
-            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += bvLength;
-            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += bvLength;
-            newBVs[i].componentStart += trisLength;
+            BV bv = newBVs[i];
+            if (bv.childIndexA != -1) bv.childIndexA += loadedBVsLength;
+            if (bv.childIndexB != -1) bv.childIndexB += loadedBVsLength;
+            bv.componentStart += loadedTrianglesLength;
+            newBVs[i] = bv;
         });
-        DebugUtils.LogStopWatch("BVH construction", ref stopwatch);
 
         // Convert to bounding volume struct variant for shader buffer transfer
-        BoundingVolume[] newBoundingVolumes;
+        RenderBV[] newRenderBVs;
         int2[] newComponentDatas;
-        (newBoundingVolumes, newComponentDatas) = BV.ClassToStruct(newBVs);
+        (newRenderBVs, newComponentDatas) = BV.ClassToStruct(newBVs);
+
+        if (DesignatedVertices)
+        {
+            int loadedVerticesLength = loadedVertices.Length;
+            Vertex[] sortedNewVertices = new Vertex[newVertices.Length];
+
+            for (int i = 0; i < newTriangles.Length; i++)
+            {
+                int baseIndex = 3 * i;
+                Triangle triangle = newTriangles[i];
+
+                sortedNewVertices[baseIndex] = newVertices[triangle.vertex0Index - loadedVerticesLength];
+                sortedNewVertices[baseIndex + 1] = newVertices[triangle.vertex1Index - loadedVerticesLength];
+                sortedNewVertices[baseIndex + 2] = newVertices[triangle.vertex2Index - loadedVerticesLength];
+
+                triangle.vertex0Index = loadedVerticesLength + baseIndex;
+                triangle.vertex1Index = loadedVerticesLength + baseIndex + 1;
+                triangle.vertex2Index = loadedVerticesLength + baseIndex + 2;
+
+                newTriangles[i] = triangle;
+            }
+
+            newVertices = sortedNewVertices;
+        }
 
         // Add new bounding volumes & tris to existing arrays
-        tris = tris.Concat(Utils.TrisFromTri2s(newTris)).ToArray();
-        boundingVolumes = boundingVolumes.Concat(newBoundingVolumes).ToArray();
-        componentDatas = componentDatas.Concat(newComponentDatas).ToArray();
+        loadedTriangles = loadedTriangles.Concat(newTriangles).ToArray();
+        loadedVertices = loadedVertices.Concat(newVertices).ToArray();
+        loadedBVs = loadedBVs.Concat(newRenderBVs).ToArray();
+        loadedComponentDatas = loadedComponentDatas.Concat(newComponentDatas).ToArray();
 
-        return (newBoundingVolumes.Length, newTris.Length);
+        DebugUtils.LogStopWatch("BVH construction", ref stopwatch);
+
+        return (newBVs.Count, newTriangles.Length);
     }
 
     private float GetEmittance(GameObject sceneObject)
@@ -307,21 +364,9 @@ public class MeshHelper : MonoBehaviour
         return brightness;
     }
 
-    private int GetEmittingObjectsNum(GameObject[] sceneObjects)
-    {
-        int emittingObjectsCount = 0;
-        foreach (var obj in sceneObjects)
-        {
-            if (GetEmittance(obj) != 0.0f)
-            {
-                emittingObjectsCount++;
-            }
-        }
+    private int GetEmittingObjectsNum(GameObject[] sceneObjects) => sceneObjects.Count(obj => GetEmittance(obj) != 0.0f);
 
-        return emittingObjectsCount;
-    }
-
-    public (Texture2D, Rect[]) ConstructTextureAtlas()
+    private (Texture2D, Rect[]) ConstructTextureAtlas()
     {
         Texture2D atlas = new Texture2D(MaxAtlasDims, MaxAtlasDims, TextureFormat.RGBA32, false);
         Rect[] rects = atlas.PackTextures(materialTextures, 1, MaxAtlasDims);
@@ -331,14 +376,113 @@ public class MeshHelper : MonoBehaviour
         return (atlas, rects);
     }
 
-    public (BoundingVolume[], Tri[], SceneObjectData[], LightObject[], Texture2D, Rect[]) CreateSceneObjects()
+    private (float3, float3) GetFastBV(float3 localMin, float3 localMax, Matrix4x4 localToWorldMatrix)
     {
-        sceneObjectsData ??= new SceneObjectData[sceneObjects.Length];
-        loadedMeshesLookup ??= new int[sceneObjects.Length];
+        // Calculate the 8 corners of the local BV
+        float3[] corners = new float3[8];
+        corners[0] = localMin;
+        corners[1] = new float3(localMin.x, localMin.y, localMax.z);
+        corners[2] = new float3(localMin.x, localMax.y, localMin.z);
+        corners[3] = new float3(localMin.x, localMax.y, localMax.z);
+        corners[4] = new float3(localMax.x, localMin.y, localMin.z);
+        corners[5] = new float3(localMax.x, localMin.y, localMax.z);
+        corners[6] = new float3(localMax.x, localMax.y, localMin.z);
+        corners[7] = localMax;
+
+        float3 worldMin = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
+        float3 worldMax = new float3(float.MinValue, float.MinValue, float.MinValue);
+
+        // Transform each BV corner to world space, and compare them to each other
+        for (int i = 0; i < 8; i++)
+        {
+            float3 worldCorner = Func.Mul(localToWorldMatrix, corners[i]);
+            worldMin = math.min(worldMin, worldCorner);
+            worldMax = math.max(worldMax, worldCorner);
+        }
+
+        return (worldMin, worldMax);
+    }
+    private (float3, float3) GetAccurateBV(Triangle[] sceneObjectTriangles, Vertex[] vertices, Matrix4x4 localToWorldMatrix)
+    {
+        for (int i = 0; i < sceneObjectTriangles.Length; i++)
+        {
+            sceneObjectTriangles[i].CalcMinMaxTransformed(vertices, localToWorldMatrix);
+        }
+
+        float3 worldMin = GetMin(sceneObjectTriangles);
+        float3 worldMax = GetMax(sceneObjectTriangles);
+
+        return (worldMin, worldMax);
+    }
+
+    private MultiArrayContainer LoadFromFile(string fileName)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        MultiArrayContainer loadContainer = ExtensionModeSelect == ExtensionMode.Json ? FileLoader.LoadMultiArrayContainerFromJsonFiles(fileName) : FileLoader.LoadArraysFromBinFile(fileName);
+
+        LoadedTriangles = loadContainer.loadedTriangles;
+        SceneObjectDatas = loadContainer.sceneObjectDatas;
+        LightObjects = loadContainer.lightObjects;
+        LoadedMeshesLookup = loadContainer.loadedMeshesLookup;
+        LoadedComponentDatas = loadContainer.loadedComponentDatas;
+        LoadedMeshes = loadContainer.loadedMeshes;
+        LoadedBVs = loadContainer.loadedBVs;
+        LoadedVertices = loadContainer.loadedVertices;
+
+        m.rtShader.SetInt("MaxBVHDepth", loadContainer.GetIntByKey("maxBVHDepth"));
+        m.rtShader.SetInt("EmittingObjectsNum", loadContainer.GetIntByKey("emittingObjectsNum"));
+        m.rtShader.SetInt("SceneBVHStartIndex", loadContainer.GetIntByKey("sceneBVHStartIndex"));
+        m.rtShader.SetFloat("TotArea", loadContainer.GetFloatByKey("totArea"));
+
+        DebugUtils.LogStopWatch("Data fetching", ref stopwatch);
+        FileModeSelect = DataMode.Disabled;
+
+        return loadContainer;
+    }
+
+    private void SaveToFile(string fileName, int maxBVHDepth, int emittingObjectsNum, int sceneBVHStartIndex, float totArea)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        var saveContainer = new MultiArrayContainer
+        {
+            loadedTriangles = LoadedTriangles,
+            sceneObjectDatas = SceneObjectDatas,
+            lightObjects = LightObjects,
+            loadedMeshesLookup = LoadedMeshesLookup,
+            loadedComponentDatas = LoadedComponentDatas,
+            loadedMeshes = LoadedMeshes,
+            loadedBVs = LoadedBVs,
+            loadedVertices = LoadedVertices,
+            integers = new KeyedInt[]
+            {
+                new() { Key = "maxBVHDepth", Value = maxBVHDepth },
+                new() { Key = "emittingObjectsNum", Value = emittingObjectsNum },
+                new() { Key = "sceneBVHStartIndex", Value = sceneBVHStartIndex }
+            },
+            floats = new KeyedFloat[]
+            {
+                new() { Key = "totArea", Value = totArea }
+            },
+            renderTriangles = RenderTriangles,
+        };
+
+        if (ExtensionModeSelect == ExtensionMode.Json) FileLoader.SaveMultiArrayContainerToJsonFiles(fileName, saveContainer);
+        else FileLoader.SaveArraysToBinFile(fileName, saveContainer);
+
+        DebugUtils.LogStopWatch("Data writing", ref stopwatch);
+        Utils.RemoveFromEndOfArray(ref LoadedComponentDatas, LastSceneBVHLength);
+        LastSceneBVHLength = 0;
+
+        FileModeSelect = DataMode.Disabled;
+    }
+
+    private int LoadSceneObjects()
+    {
         int[] BVHDepths = new int[sceneObjects.Length + 1];
         BVHDepths[sceneObjects.Length] = MaxDepthSceneBVH;
 
-        // Create all scene objects & triangle BVHs
         for (int i = 0; i < sceneObjects.Length; i++)
         {
             // Retrieve relevant game object data
@@ -351,121 +495,169 @@ public class MeshHelper : MonoBehaviour
 
             // Set transformation matrices
             sceneObjectData.worldToLocalMatrix = Utils.CreateWorldToLocalMatrix(transform.position, transform.rotation.eulerAngles, transform.localScale);
-            sceneObjectData.localToWorldMatrix = sceneObjectData.worldToLocalMatrix.inverse;
+            Matrix4x4 worldToLocalMatrix = sceneObjectData.worldToLocalMatrix;
+            sceneObjectData.localToWorldMatrix = worldToLocalMatrix.inverse;
 
-            // Set script settings
+            // Transfer script settings
             sceneObjectData.materialIndex = sceneObjectSettings.MaterialIndex;
             sceneObjectData.maxDepthBVH = sceneObjectSettings.MaxDepthBVH;
             BVHDepths[i] = sceneObjectData.maxDepthBVH;
 
-            // Get mesh index
-            int meshIndex = Utils.GetMeshIndex(LoadedMeshes, mesh);
+            // Construct mesh BVH if the mesh has yet to be loaded
+            string meshKey = Utils.GetMeshKey(mesh);
+            int meshIndex = Utils.GetMeshIndex(LoadedMeshes, meshKey);
             if (meshIndex == -1)
             {
-                // Load mesh (construct it's BVH) if it has not yet been loaded
-                LoadedMeshes.Add(new(mesh, LoadMesh(mesh), loadedTris.Length, loadedBoundingVolumes.Length));
-                ConstructBVH(ref loadedBoundingVolumes, ref loadedComponentDatas, LoadMesh(mesh), ref loadedTris, sceneObjectData.maxDepthBVH);
+                Vertex[] meshVertices;
+                Triangle[] meshTriangles;
+                (meshVertices, meshTriangles) = LoadMesh(mesh, LoadedVerticesNum);
+                LoadedVerticesNum += meshVertices.Length;
+
+                LoadedMeshes.Add(new MeshData(meshTriangles, GetMin(meshTriangles), GetMax(meshTriangles), LoadedTriangles.Length, LoadedBVs.Length, meshKey));
+                ConstructBVH(ref LoadedBVs, ref LoadedTriangles, ref LoadedVertices, ref LoadedComponentDatas, meshVertices, meshTriangles, sceneObjectData.maxDepthBVH);
                 meshIndex = LoadedMeshes.Count - 1;
             }
-            loadedMeshesLookup[i] = meshIndex;
+            LoadedMeshesLookup[i] = meshIndex;
 
             // Set start index values
             sceneObjectData.bvStartIndex = LoadedMeshes[meshIndex].bvStartIndex;
 
-            // Add scene object data to the array;
-            sceneObjectsData[i] = sceneObjectData;
+            // Add scene object data to the array
+            SceneObjectDatas[i] = sceneObjectData;
         }
 
-        m.rtShader.SetInt("MaxBVHDepth", Func.MaxInt(MaxDepthSceneBVH));
+        int maxBVHDepth = Func.MaxInt(BVHDepths);
 
-        // --- Scene object BVH ---
+        return maxBVHDepth;
+    }
 
+    private (int, float) ConstructSceneBVH()
+    {
         Stopwatch stopwatch = Stopwatch.StartNew();
 
-        Utils.RemoveFromEndOfArray(ref loadedBoundingVolumes, lastSceneBVHLength);
-        Utils.RemoveFromEndOfArray(ref loadedComponentDatas, lastSceneBVHLength);
+        Utils.RemoveFromEndOfArray(ref LoadedBVs, LastSceneBVHLength);
+        Utils.RemoveFromEndOfArray(ref LoadedComponentDatas, LastSceneBVHLength);
 
-        // Transform tri mesh to global space
+        // Calculate area related values to be used by RT shader
         float totArea = 0.0f;
-        for (int i = 0; i < sceneObjects.Length; i++)
+        Parallel.For(0, sceneObjects.Length, i =>
         {
-            SceneObjectData sceneObjectData = sceneObjectsData[i];
-            Tri2[] sceneObjectTris = LoadedMeshes[loadedMeshesLookup[i]].meshTris;
-            float3 minTemplate = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-            float3 maxTemplate = new float3(float.MinValue, float.MinValue, float.MinValue);
-            for (int j = 0; j < sceneObjectTris.Length; j++)
-            {
-                sceneObjectTris[j].CalcMinMaxTransformed(sceneObjectData.localToWorldMatrix, minTemplate, maxTemplate);
-            }
+            Matrix4x4 localToWorldMatrix = SceneObjectDatas[i].localToWorldMatrix;
+            Triangle[] sceneObjectTriangles = LoadedMeshes[LoadedMeshesLookup[i]].triangles;
+            float3 localMin = LoadedMeshes[LoadedMeshesLookup[i]].localMin;
+            float3 localMax = LoadedMeshes[LoadedMeshesLookup[i]].localMax;
 
-            float3 min = GetMin(sceneObjectTris);
-            float3 max = GetMax(sceneObjectTris);
-            float approximatedArea = GetBoxArea(min, max);
-            sceneObjectsData[i].min = min;
-            sceneObjectsData[i].max = max;
-            sceneObjectsData[i].areaApprox = approximatedArea;
-            totArea += approximatedArea;
-        }
-        m.rtShader.SetFloat("TotArea", totArea);
+            float3 worldMin;
+            float3 worldMax;
+            (worldMin, worldMax) = BVUpdateModeSelect == BVUpdateMode.Fast ? GetFastBV(localMin, localMax, localToWorldMatrix) : GetAccurateBV(sceneObjectTriangles, LoadedVertices, localToWorldMatrix);
 
-        float3 sceneMin = GetMin(sceneObjectsData);
-        float3 sceneMax = GetMax(sceneObjectsData);
-        List<BV> newBVs = new List<BV> { new BV(sceneMin, sceneMax, 0, sceneObjectsData.Length, 1, 2) };
+            float boxArea = GetBoxArea(worldMin, worldMax);
 
-        // Construct the BVH
-        RecursivelySplitBV(ref newBVs, ref sceneObjectsData, 0, newBVs[0], MaxDepthSceneBVH);
-        m.rtShader.SetInt("SceneBVHStartIndex", loadedBoundingVolumes.Length);
-        Parallel.For(0, newBVs.Count, i =>
+            SceneObjectDatas[i].min = worldMin;
+            SceneObjectDatas[i].max = worldMax;
+            SceneObjectDatas[i].areaApprox = boxArea;
+            
+            totArea += boxArea;
+        });
+        m.rtShader.SetFloat("TotArea", totArea);DebugUtils.LogStopWatch("BVH construction for scene objects", ref stopwatch);
+
+        float3 sceneMin = GetMin(SceneObjectDatas);
+        float3 sceneMax = GetMax(SceneObjectDatas);
+        List<BV> sceneBVs = new List<BV> { new BV(sceneMin, sceneMax, 0, SceneObjectDatas.Length, 1, 2) };
+
+        // Construct scene BVH
+        RecursivelySplitBV(ref sceneBVs, ref SceneObjectDatas, 0, sceneBVs[0], MaxDepthSceneBVH);
+
+        int sceneBVHStartIndex = LoadedBVs.Length;
+        m.rtShader.SetInt("SceneBVHStartIndex", sceneBVHStartIndex);
+        Parallel.For(0, sceneBVs.Count, i =>
         {
-            if (newBVs[i].childIndexA != -1) newBVs[i].childIndexA += loadedBoundingVolumes.Length;
-            if (newBVs[i].childIndexB != -1) newBVs[i].childIndexB += loadedBoundingVolumes.Length;
+            BV bv = sceneBVs[i];
+            if (bv.childIndexA != -1) bv.childIndexA += sceneBVHStartIndex;
+            if (bv.childIndexB != -1) bv.childIndexB += sceneBVHStartIndex;
+            sceneBVs[i] = bv;
         });
 
-        DebugUtils.LogStopWatch("BVH construction (scene objects)", ref stopwatch);
+        // Replace existing scene BVH with new data
+        RenderBV[] newRenderBVs;
+        int2[] newComponentDatas;
+        (newRenderBVs, newComponentDatas) = BV.ClassToStruct(sceneBVs);
+        LoadedBVs = LoadedBVs.Concat(newRenderBVs).ToArray();
+        LoadedComponentDatas = LoadedComponentDatas.Concat(newComponentDatas).ToArray();
 
-        // Replace existing scene BVH with new BVH data
-        BoundingVolume[] newBoundingVolumes;
-        int2[] newComponentData;
-        (newBoundingVolumes, newComponentData) = BV.ClassToStruct(newBVs);
-        loadedBoundingVolumes = loadedBoundingVolumes.Concat(newBoundingVolumes).ToArray();
-        loadedComponentDatas = loadedComponentDatas.Concat(newComponentData).ToArray();
-        lastSceneBVHLength = newBoundingVolumes.Length;
+        return (sceneBVHStartIndex, totArea);
+    }
+
+    public (RenderBV[], Vertex[], RenderTriangle[], SceneObjectData[], LightObject[], Texture2D, Rect[]) ConstructScene()
+    {
+        // Pack material textures into atlas
+        if (textureAtlas == null) (textureAtlas, AtlasRects) = ConstructTextureAtlas();
+
+        // Fetch data
+        if (FileModeSelect == DataMode.LoadExistingFile)
+        {
+            MultiArrayContainer loadContainer = LoadFromFile(FileName);
+
+            return (loadContainer.loadedBVs, loadContainer.loadedVertices, loadContainer.renderTriangles, loadContainer.sceneObjectDatas, loadContainer.lightObjects, textureAtlas, AtlasRects);
+        }
+
+        // --- Scene object BVHs ---
+
+        SceneObjectDatas ??= new SceneObjectData[sceneObjects.Length];
+        LoadedMeshesLookup ??= new int[sceneObjects.Length];
+
+        int maxBVHDepth = LoadSceneObjects();
+
+        m.rtShader.SetInt("MaxBVHDepth", maxBVHDepth);
+
+        // --- Scene BVH ---
+
+        int sceneBVHStartIndex;
+        float totArea;
+        (sceneBVHStartIndex, totArea) = ConstructSceneBVH();
 
         // Load light emitting object data
         int emittingObjectsNum = GetEmittingObjectsNum(sceneObjects);
         m.rtShader.SetInt("EmittingObjectsNum", emittingObjectsNum);
-        lightObjects = new LightObject[emittingObjectsNum];
+        LightObjects = new LightObject[emittingObjectsNum];
         int lightObjectIndex = 0;
-        foreach (SceneObjectData sceneObjectData in sceneObjectsData)
+        foreach (SceneObjectData sceneObjectData in SceneObjectDatas)
         {
             if (GetEmittance(sceneObjectData) != 0.0f)
             {
-                LightObject lightObject = new LightObject
+                LightObjects[lightObjectIndex++] = new LightObject
                 {
                     localToWorldMatrix = sceneObjectData.localToWorldMatrix,
                     areaApprox = sceneObjectData.areaApprox,
                     brightness = m.Material2s[sceneObjectData.materialIndex].brightness,
-                    triStart = loadedComponentDatas[sceneObjectData.bvStartIndex].x,
-                    totTris = loadedComponentDatas[sceneObjectData.bvStartIndex].y
+                    triStart = LoadedComponentDatas[sceneObjectData.bvStartIndex].x,
+                    totTris = LoadedComponentDatas[sceneObjectData.bvStartIndex].y
                 };
-                lightObjects[lightObjectIndex++] = lightObject;
             }
         }
 
-        // Set tri parent indexes
-        for (int i = 0; i < sceneObjectsData.Length; i++)
+        // Transfer data to shader friendly struct
+        if (RenderTriangles == null)
         {
-            int triStart = loadedComponentDatas[sceneObjectsData[i].bvStartIndex].x;
-            int totTris = loadedComponentDatas[sceneObjectsData[i].bvStartIndex].y;
-            for (int triIndex = triStart; triIndex < triStart + totTris; triIndex++)
+            RenderTriangles = new RenderTriangle[LoadedTriangles.Length];
+            Parallel.For(0, RenderTriangles.Length, i =>
             {
-                loadedTris[triIndex].parentIndex = i;
-            }
+                Triangle triangle = LoadedTriangles[i];
+                RenderTriangles[i] = new RenderTriangle
+                {
+                    vertex0Index = triangle.vertex0Index,
+                    vertex1Index = triangle.vertex1Index,
+                    vertex2Index = triangle.vertex2Index,
+                };
+            });
         }
 
-        // Pack material textures into a single atlas
-        if (textureAtlas == null) (textureAtlas, atlasRects) = ConstructTextureAtlas();
+        // // Sort Triangle & Vertex data to decrease the amount of cache misses in th shader
+        // (LoadedVertices, RenderTriangles) = SortTrian2glesVertices(LoadedVertices, RenderTriangles);
 
-        return (loadedBoundingVolumes, loadedTris, sceneObjectsData, lightObjects, textureAtlas, atlasRects);
+        // Save Data
+        if (FileModeSelect == DataMode.GenerateNewFile) SaveToFile(FileName, maxBVHDepth, emittingObjectsNum, sceneBVHStartIndex, totArea);
+
+        return (LoadedBVs, LoadedVertices, RenderTriangles, SceneObjectDatas, LightObjects, textureAtlas, AtlasRects);
     }
 }

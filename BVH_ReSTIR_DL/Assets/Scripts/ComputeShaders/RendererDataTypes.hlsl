@@ -1,17 +1,18 @@
 // --- Rendered object types ---
- 
-struct Tri // Replace with vertex lookup & vertex buffers !!!
+
+struct Triangle
 {
-    float3 vA;
-    float3 vB;
-    float3 vC;
-    float2 uvA;
-    float2 uvB;
-    float2 uvC;
-    float3 worldNormal;
-    int parentIndex;
+    int vertex0Index;
+    int vertex1Index;
+    int vertex2Index;
+    float3 localNormal;
 };
-struct BoundingVolume
+struct Vertex2
+{
+    float3 pos;
+    float2 uv;
+};
+struct BV
 {
     float3 min;
     float3 max;
@@ -53,6 +54,7 @@ struct Ray
 {
     float3 pos;
     float3 dir;
+    float3 invDir;
 };
 struct HitInfo
 {
@@ -72,6 +74,7 @@ struct TriHitInfo
 };
 struct TraceInfo
 {
+    float totTravelDst;
     float3 rayColor;
     float3 directLight;
     float3 indirectLight;
@@ -114,6 +117,7 @@ Ray InitRay(float3 pos, float3 dir)
     Ray ray;
     ray.pos = pos;
     ray.dir = dir;
+    ray.invDir = 1 / dir;
  
     return ray;
 }
@@ -122,6 +126,7 @@ Ray InitRay()
     Ray ray;
     ray.pos = 0;
     ray.dir = 0;
+    ray.invDir = 0;
  
     return ray;
 }

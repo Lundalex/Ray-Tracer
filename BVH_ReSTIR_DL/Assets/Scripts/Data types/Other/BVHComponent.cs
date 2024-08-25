@@ -1,10 +1,10 @@
 using Unity.Mathematics;
 
-public interface BVHComponent
+public interface IBVHComponent
 {
     float3 GetMin();
     float3 GetMax();
-    void CalcMin();
-    void CalcMax();
+    void CalcMin(Vertex[] vertices, int vertexIndexOffset = 0);
+    void CalcMax(Vertex[] vertices, int vertexIndexOffset = 0);
     float3 GetMid();
 }
