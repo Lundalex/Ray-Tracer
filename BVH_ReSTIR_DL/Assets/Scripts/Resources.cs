@@ -6,11 +6,10 @@ using Vector3 = UnityEngine.Vector3;
 using Debug = UnityEngine.Debug;
 using System.Diagnostics;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Security.Cryptography;
 
-namespace Resources
+namespace Resources2
 {
     public class Utils
     {
@@ -186,6 +185,16 @@ namespace Resources
         }
         
         public static int Log2(int a, bool doCeil = false)
+        {
+            double logValue = Math.Log(a, 2);
+            return doCeil ? (int)Math.Ceiling(logValue) : (int)logValue;
+        }
+        public static int Log2(float a, bool doCeil = false)
+        {
+            double logValue = Math.Log(a, 2);
+            return doCeil ? (int)Math.Ceiling(logValue) : (int)logValue;
+        }
+        public static int Log2(ref float a, bool doCeil = false)
         {
             double logValue = Math.Log(a, 2);
             return doCeil ? (int)Math.Ceiling(logValue) : (int)logValue;

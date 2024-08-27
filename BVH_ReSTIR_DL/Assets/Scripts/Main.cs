@@ -2,10 +2,9 @@ using UnityEngine;
 using Debug = UnityEngine.Debug;
 using Unity.Mathematics;
 using System;
- 
-// Import utils from Resources.cs
-using Resources;
-using System.Diagnostics;
+
+// Import utils from Resources2.cs
+using Resources2;
 // Usage: Utils.(functionName)()
 
 public class Main : MonoBehaviour
@@ -15,6 +14,7 @@ public class Main : MonoBehaviour
     public float CameraPanSpeed;
     [Header("Debug settings")]
     public RenderTargetSelect renderTarget;
+    public bool RenderAsciiArt;
     public int DebugMaxTriChecks;
     public int DebugMaxBVChecks;
     [Header("Render settings")]
@@ -53,7 +53,9 @@ public class Main : MonoBehaviour
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
     public MeshHelper meshHelper;
+    public AsciiHelper asciiHelper;
     public Texture2D EnvironmentMapTexture;
+    public Texture2D BlackTexture;
  
     // Script communication
     [NonSerialized] public bool DoUpdateSettings;
@@ -102,42 +104,8 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
     private Vector3 lastWorldSpaceCameraPos;
     private Matrix4x4 lastCameraTransform;
-     void TerminalTest()
-    {
-        Debug.Log("Writing to terminal...");
 
-        // Command to echo text to the terminal
-        string command = "echo 'Hello, this is a message from Unity!'";
 
-        // Start a new process to run the shell command
-        using (Process myProcess = new Process())
-        {
-            myProcess.StartInfo.FileName = "/bin/bash";
-            myProcess.StartInfo.Arguments = $"-c \"{command}\"";
-            myProcess.StartInfo.UseShellExecute = false;
-            myProcess.StartInfo.RedirectStandardOutput = true;
-            myProcess.StartInfo.RedirectStandardError = true;
-
-            myProcess.Start();
-
-            // Capture the output and error (if any) from the terminal command
-            string output = myProcess.StandardOutput.ReadToEnd();
-            string error = myProcess.StandardError.ReadToEnd();
-
-            myProcess.WaitForExit();
-
-            // Log the output and error (if any) to Unity's console
-            if (!string.IsNullOrEmpty(output))
-            {
-                Debug.Log($"Terminal Output: {output}");
-            }
-
-            if (!string.IsNullOrEmpty(error))
-            {
-                Debug.LogError($"Terminal Error: {error}");
-            }
-        }
-    }
     private void Start()
     {
         lastCameraPosition = transform.position;
@@ -152,8 +120,6 @@ public class Main : MonoBehaviour
         UpdatePerFrame();
         UpdateSettings(true);
         SetCameraData();
-
-        TerminalTest();
  
         ProgramStarted = true;
     }
@@ -198,7 +164,7 @@ public class Main : MonoBehaviour
         if (Input.GetKey(KeyCode.D)) direction += Vector3.right;
         if (Input.GetKey(KeyCode.Space)) direction += Vector3.up;
         if (Input.GetKey(KeyCode.LeftShift)) direction -= Vector3.up;
- 
+
         direction.Normalize();
  
         transform.position += CameraMoveSpeed * Time.deltaTime * direction;
@@ -481,7 +447,8 @@ public class Main : MonoBehaviour
         }
 
         // Render relected render target to the camera output
-        switch (renderTarget)
+        if (renderTarget == RenderTargetSelect.None || RenderAsciiArt) Graphics.Blit(BlackTexture, dest);
+        else switch (renderTarget)
         {
             case RenderTargetSelect.RTResultTexture:
                 Graphics.Blit(RTResultTexture, dest);
@@ -510,7 +477,50 @@ public class Main : MonoBehaviour
             case RenderTargetSelect.RayHitPointBTexture:
                 Graphics.Blit(RayHitPointBTexture, dest);
                 break;
+            case RenderTargetSelect.None:
+                Graphics.Blit(BlackTexture, dest);
+                break;
         }
+
+        if (RenderAsciiArt)
+        {
+            Texture2D tex;
+            switch (renderTarget)
+            {
+                case RenderTargetSelect.RTResultTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(RTResultTexture);
+                    break;
+                case RenderTargetSelect.AccumulatedResultTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(AccumulatedResultTexture);
+                    break;
+                case RenderTargetSelect.DebugOverlayTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(DebugOverlayTexture);
+                    break;
+                case RenderTargetSelect.DepthBufferTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(DepthBufferTexture);
+                    break;
+                case RenderTargetSelect.NormalsBufferTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(NormalsBufferTexture);
+                    break;
+                case RenderTargetSelect.RayHitPointATexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(RayHitPointATexture);
+                    break;
+                case RenderTargetSelect.RayHitPointBTexture:
+                    tex = asciiHelper.RenderTextureToTexture2D(RayHitPointBTexture);
+                    break;
+                default:
+                    asciiHelper.Asciitext.enabled = false;
+                    return;
+            }
+
+            string asciiArt = asciiHelper.ConvertTextureToASCII(tex);
+
+            asciiHelper.Asciitext.enabled = true;
+            asciiHelper.Asciitext.text = asciiArt;
+
+            Destroy(tex);
+        }
+        else asciiHelper.Asciitext.enabled = false;
     }
  
     private ComputeBuffer[] AllBuffers() => new ComputeBuffer[] { BVBuffer, RenderTriangleBuffer, VertexBuffer, SceneObjectDataBuffer, LightObjectBuffer, MaterialBuffer, CandidateBuffer, CandidateReuseBuffer, TemporalFrameBuffer, HitInfoBuffer };

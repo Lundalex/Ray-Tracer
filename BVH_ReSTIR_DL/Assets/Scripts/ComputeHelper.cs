@@ -2,7 +2,7 @@ using Unity.Mathematics;
 using UnityEngine;
 
 // Import utils from Resources.cs
-using Resources;
+using Resources2;
 public static class ComputeHelper
 {
 

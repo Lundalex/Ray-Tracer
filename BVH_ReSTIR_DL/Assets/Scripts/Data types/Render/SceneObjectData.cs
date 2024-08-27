@@ -1,6 +1,6 @@
 using Matrix4x4 = UnityEngine.Matrix4x4;
 using Unity.Mathematics;
-using Resources;
+using Resources2;
 using UnityEngine;
 [System.Serializable]
 public struct SceneObjectData : IBVHComponent

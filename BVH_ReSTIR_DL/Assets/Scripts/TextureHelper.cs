@@ -354,10 +354,43 @@ public class TextureHelper : MonoBehaviour
     /// <summary>Assigns a shallow copy (no reference) of a 2D render texture, to another 2D render texture</summary>
     public void Copy (ref RenderTexture texture, RenderTexture textureA, int2 resolution)
     {
-        tcShader.SetTexture(10, "Texture_A_2D", textureA);
-        tcShader.SetTexture(10, "Texture_Output_2D", texture);
+        tcShader.SetTexture(11, "Texture_A_2D", textureA);
+        tcShader.SetTexture(11, "Texture_Output_2D", texture);
 
         ComputeHelper.DispatchKernel (tcShader, "Copy_2D_F3", resolution, tbShaderThreadSize2);
+    }
+    /// <summary>Assigns a shallow copy (no reference) of a Texture2D, to another Texture2D</summary>
+    public void Copy (ref Texture2D texture, Texture2D textureA, int2 resolution)
+    {
+        tcShader.SetTexture(11, "Texture_A_2D", textureA);
+        tcShader.SetTexture(11, "Texture_Output_2D", texture);
+
+        ComputeHelper.DispatchKernel (tcShader, "Copy_2D_F3", resolution, tbShaderThreadSize2);
+    }
+    /// <summary>Apply a box blur effect to a texture2D</summary>
+    public void BoxBlur (ref Texture2D texture, int2 resolution, int smoothingRadius = 2, int iterations = 1)
+    {
+        RenderTexture rtTexture = CreateTexture(resolution, 3);
+        RenderTexture texCopy = CreateTexture(resolution, 3);
+        for (int i = 0; i < iterations; i++)
+        {
+            Graphics.Blit(texture, rtTexture);
+            Copy(ref texCopy, rtTexture, resolution);
+
+            tcShader.SetTexture(10, "Texture_A_2D", texCopy);
+            tcShader.SetTexture(10, "Texture_Output_2D", rtTexture);
+
+            tcShader.SetVector("Resolution2D", new Vector2(resolution.x, resolution.y));
+            tcShader.SetFloat("SmoothingRadius", smoothingRadius);
+
+            ComputeHelper.DispatchKernel(tcShader, "BoxBlur_2D_F1", resolution, tbShaderThreadSize);
+        }
+
+        RenderTexture.active = rtTexture;
+        texture.ReadPixels(new Rect(0, 0, rtTexture.width, rtTexture.height), 0, 0);
+        RenderTexture.active = null;
+        
+        texture.Apply();
     }
 #endregion
 

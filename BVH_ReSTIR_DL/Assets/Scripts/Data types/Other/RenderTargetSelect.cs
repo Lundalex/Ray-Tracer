@@ -8,5 +8,6 @@ public enum RenderTargetSelect
     EnvironmentMapTexture,
     TextureAtlas,
     RayHitPointATexture,
-    RayHitPointBTexture
+    RayHitPointBTexture,
+    None
 }

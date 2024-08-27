@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 
 // Import utils from Resources.cs
-using Resources;
+using Resources2;
 using System;
 // Usage: Utils.(functionName)()
 
