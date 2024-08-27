@@ -97,7 +97,6 @@ float randValueNormalDistribution(inout uint state)
     return rho * cos(theta);
 }
 
-// Expensive!
 float3 randPointOnUnitSphere(inout uint state)
 {
     float x = randValueNormalDistribution(state);

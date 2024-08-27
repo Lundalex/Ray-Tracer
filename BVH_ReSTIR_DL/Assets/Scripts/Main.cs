@@ -1,9 +1,11 @@
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 using Unity.Mathematics;
 using System;
  
 // Import utils from Resources.cs
 using Resources;
+using System.Diagnostics;
 // Usage: Utils.(functionName)()
 
 public class Main : MonoBehaviour
@@ -100,7 +102,42 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
     private Vector3 lastWorldSpaceCameraPos;
     private Matrix4x4 lastCameraTransform;
- 
+     void TerminalTest()
+    {
+        Debug.Log("Writing to terminal...");
+
+        // Command to echo text to the terminal
+        string command = "echo 'Hello, this is a message from Unity!'";
+
+        // Start a new process to run the shell command
+        using (Process myProcess = new Process())
+        {
+            myProcess.StartInfo.FileName = "/bin/bash";
+            myProcess.StartInfo.Arguments = $"-c \"{command}\"";
+            myProcess.StartInfo.UseShellExecute = false;
+            myProcess.StartInfo.RedirectStandardOutput = true;
+            myProcess.StartInfo.RedirectStandardError = true;
+
+            myProcess.Start();
+
+            // Capture the output and error (if any) from the terminal command
+            string output = myProcess.StandardOutput.ReadToEnd();
+            string error = myProcess.StandardError.ReadToEnd();
+
+            myProcess.WaitForExit();
+
+            // Log the output and error (if any) to Unity's console
+            if (!string.IsNullOrEmpty(output))
+            {
+                Debug.Log($"Terminal Output: {output}");
+            }
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                Debug.LogError($"Terminal Error: {error}");
+            }
+        }
+    }
     private void Start()
     {
         lastCameraPosition = transform.position;
@@ -115,6 +152,8 @@ public class Main : MonoBehaviour
         UpdatePerFrame();
         UpdateSettings(true);
         SetCameraData();
+
+        TerminalTest();
  
         ProgramStarted = true;
     }
