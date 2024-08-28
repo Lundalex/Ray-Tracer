@@ -6,6 +6,7 @@ struct Triangle
     int vertex1Index;
     int vertex2Index;
     float3 localNormal;
+    float area;
 };
 struct Vertex2
 {

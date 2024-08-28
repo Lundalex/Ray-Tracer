@@ -15,12 +15,12 @@ public struct SceneObjectData : IBVHComponent
     public float3 max;
     public readonly float3 GetMin() => min;
     public readonly float3 GetMax() => max;
-    public readonly void CalcMax(Vertex[] vertices, int vertexIndexOffset = 0)
+    public readonly void CalcMax(float3 v0Pos = new float3(), float3 v1Pos = new float3(), float3 v2Pos = new float3())
     {
         Debug.Log("SceneObjectData method CalcMax() not allowed to be used!");
     }
 
-    public readonly void CalcMin(Vertex[] vertices, int vertexIndexOffset = 0)
+    public readonly void CalcMin(float3 v0Pos = new float3(), float3 v1Pos = new float3(), float3 v2Pos = new float3())
     {
         Debug.Log("SceneObjectData method CalcMin() not allowed to be used!");
     }

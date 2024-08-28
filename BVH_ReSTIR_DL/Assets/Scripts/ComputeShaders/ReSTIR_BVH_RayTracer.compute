@@ -119,25 +119,6 @@ float4 SampleEnvironmentMap(float3 dir)
     return col;
 }
  
-float TriDstSqr(float3 p, float3 a, float3 b, float3 c )
-{
-  float3 ba = b - a; float3 pa = p - a;
-  float3 cb = c - b; float3 pb = p - b;
-  float3 ac = a - c; float3 pc = p - c;
-  float3 nor = cross( ba, ac );
- 
-  return (sign(dot(cross(ba,nor),pa)) +
-         sign(dot(cross(cb,nor),pb)) +
-         sign(dot(cross(ac,nor),pc))<2.0)
-         ?
-         min( min(
-         dot2(ba*clamp(dot(ba,pa)/dot2(ba),0.0,1.0)-pa),
-         dot2(cb*clamp(dot(cb,pb)/dot2(cb),0.0,1.0)-pb) ),
-         dot2(ac*clamp(dot(ac,pc)/dot2(ac),0.0,1.0)-pc) )
-         :
-         dot(nor,pa)*dot(nor,pa)/dot2(nor);
-}
- 
 TriHitInfo RayTriangleIntersect(Ray ray, Triangle tri)
 {
     Vertex2 v0 = Vertices[tri.vertex0Index];
@@ -371,13 +352,13 @@ float GetTriArea(Triangle tri)
 int TriReservoirSample(uint startTriIndex, uint endTriIndex, inout uint state)
 {
     int firstIndex = randIntSpan(startTriIndex, endTriIndex, state);
-    float firstWeight = GetTriArea(Triangles[firstIndex]);
+    float firstWeight = Triangles[firstIndex].area;
     Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
  
     for (uint i = 0; i < TriReservoirTestsNum; i++)
     {
         int candidateIndex = randIntSpan(startTriIndex, endTriIndex, state);
-        float candidateWeight = GetTriArea(Triangles[candidateIndex]);
+        float candidateWeight = Triangles[candidateIndex].area;
  
         if (weightedRand(candidateWeight, reservoir.totWeights, state))
         {
@@ -547,13 +528,6 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
  
 // ---Kernel "SpatialReusePass": ---
 
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-// New SpatialCandidateReservoirSample removes bug, bug visual quality decreases. FIND FIX FOR THE ORIGINAL BUG AND IMPLEMENT THAT ONLY ! ! ! ! ! !
-
 CandidateReservoir SpatialCandidateReservoirSample(uint candidateBaseIndex, uint rayIndex, int2 threadID, inout uint state)
 {
     CandidateReservoir spatialReservoir = InitCandidateReservoir();
@@ -655,8 +629,6 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
     int2 offsetID = int2(lastFrameUV * float2(Resolution));
     if (length(uv - lastFrameUV) > TemporalPrecisionThreshold)
     {
-        DebugOverlay[id.xy] = float4(1, 0, 0, 0);
-
         for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
         {
             uint candidateIndex = candidateBaseIndex + rayIndex;
@@ -744,7 +716,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         {
             Candidates[candidateIndex] = InitCandidateReservoir();
         }
- 
+
         // Calculate new ray pos
         ray.pos = hitInfo.hitPoint;
  
@@ -846,7 +818,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
         combinedTraceInfo.totTravelDst += traceInfo.totTravelDst;
     }
     combinedTraceInfo.totTravelDst /= RaysPerPixel;
-    float3 combinedLight = combinedTraceInfo.directLight + combinedTraceInfo.indirectLight / sqr(combinedTraceInfo.totTravelDst); // Compensation for candidate?
+    float3 combinedLight = combinedTraceInfo.directLight + combinedTraceInfo.indirectLight / sqr(combinedTraceInfo.totTravelDst); // Compensation for candidate weight?
     combinedLight /= RaysPerPixel;
  
     // Record ray tracer result

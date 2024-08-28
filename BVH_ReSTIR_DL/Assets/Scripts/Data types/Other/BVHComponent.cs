@@ -4,7 +4,7 @@ public interface IBVHComponent
 {
     float3 GetMin();
     float3 GetMax();
-    void CalcMin(Vertex[] vertices, int vertexIndexOffset = 0);
-    void CalcMax(Vertex[] vertices, int vertexIndexOffset = 0);
+    void CalcMin(float3 v0Pos, float3 v1Pos, float3 v2Pos);
+    void CalcMax(float3 v0Pos, float3 v1Pos, float3 v2Pos);
     float3 GetMid();
 }

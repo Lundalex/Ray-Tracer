@@ -648,6 +648,7 @@ public class MeshHelper : MonoBehaviour
                     vertex0Index = triangle.vertex0Index,
                     vertex1Index = triangle.vertex1Index,
                     vertex2Index = triangle.vertex2Index,
+                    area = triangle.area
                 };
             });
         }

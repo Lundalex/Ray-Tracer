@@ -291,6 +291,15 @@ namespace Resources2
             return uv;
         }
 
+        public static float GetTriArea(float3 v0, float3 v1, float3 v2)
+        {
+            Vector3 ab = v1 - v0;
+            Vector3 ac = v2 - v0;
+            Vector3 crossProduct = Vector3.Cross(ab, ac);
+            float area = crossProduct.magnitude * 0.5f;
+            return area;
+        }
+
         public static float[] DegreesToRadians(float[] degreesArray)
         {
             float[] radiansArray = new float[degreesArray.Length];

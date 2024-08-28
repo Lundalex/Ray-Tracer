@@ -10,20 +10,22 @@ public struct Triangle : IBVHComponent
     public int parentIndex;
     public float3 min;
     public float3 max;
+    public float area;
     public readonly float3 GetMin() => min;
     public readonly float3 GetMax() => max;
     public void Initialise(Vertex[] vertices, int vertexIndexOffset = 0)
     {
-        CalcMin(vertices, vertexIndexOffset);
-        CalcMax(vertices, vertexIndexOffset);
-    }
-    public void CalcMin(Vertex[] vertices, int vertexIndexOffset = 0)
-    {
-        float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
-
         float3 v0Pos = vertices[vertex0Index - vertexIndexOffset].pos;
         float3 v1Pos = vertices[vertex1Index - vertexIndexOffset].pos;
         float3 v2Pos = vertices[vertex2Index - vertexIndexOffset].pos;
+
+        CalcMin(v0Pos, v1Pos, v2Pos);
+        CalcMax(v0Pos, v1Pos, v2Pos);
+        this.area = Func.GetTriArea(v0Pos, v1Pos, v2Pos);
+    }
+    public void CalcMin(float3 v0Pos, float3 v1Pos, float3 v2Pos)
+    {
+        float3 min = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
 
         min.x = Mathf.Min(min.x, v0Pos.x, v1Pos.x, v2Pos.x);
         min.y = Mathf.Min(min.y, v0Pos.y, v1Pos.y, v2Pos.y);
@@ -31,13 +33,9 @@ public struct Triangle : IBVHComponent
 
         this.min = min;
     }
-    public void CalcMax(Vertex[] vertices, int vertexIndexOffset = 0)
+    public void CalcMax(float3 v0Pos, float3 v1Pos, float3 v2Pos)
     {
         float3 max = new float3(float.MinValue, float.MinValue, float.MinValue);
-
-        float3 v0Pos = vertices[vertex0Index - vertexIndexOffset].pos;
-        float3 v1Pos = vertices[vertex1Index - vertexIndexOffset].pos;
-        float3 v2Pos = vertices[vertex2Index - vertexIndexOffset].pos;
 
         max.x = Mathf.Max(max.x, v0Pos.x, v1Pos.x, v2Pos.x);
         max.y = Mathf.Max(max.y, v0Pos.y, v1Pos.y, v2Pos.y);
