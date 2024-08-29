@@ -635,6 +635,7 @@ MonoBehaviour:
   - {fileID: 1251211379}
   materialTextures:
   - {fileID: 2800000, guid: e15914c9d03216746afefe8098cdb1e3, type: 3}
+  materials: []
   DesignatedVertices: 0
   MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10
@@ -659,6 +660,7 @@ MonoBehaviour:
   artResolution:
     x: 150
     y: 84
+  DoColor: 0
   BlurRadius: 1
   BlurIterations: 1
   Asciitext: {fileID: 1219417430}

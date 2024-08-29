@@ -5,7 +5,7 @@ struct Triangle
     int vertex0Index;
     int vertex1Index;
     int vertex2Index;
-    float3 localNormal;
+    float3 localNormal; // TBR
     float area;
 };
 struct Vertex2
@@ -41,12 +41,22 @@ struct LightObject
 };
 struct Material2
 {
-    float3 color;
-    int2 texLoc;
-    int2 texDims;
-    float3 specularColor;
     float brightness;
+    // Color map
+    float3 col;
+    int2 colTexLoc;
+    int2 colTexDims;
+    // Specular color map
+    float3 specCol;
+    int2 specColTexLoc;
+    int2 specColTexDims;
+    // Smoothness (r), Bump map (g)
     float smoothness;
+    int2 compressedTexLoc;
+    int2 compressedTexDims;
+    // Normals map
+    int2 normalsTexLoc;
+    int2 normalsTexDims;
 };
  
 // --- Ray tracer structs ---
@@ -154,12 +164,22 @@ DebugData InitDebugData()
 Material2 InitMaterial()
 {
     Material2 material;
-    material.color = 0;
-    material.texLoc = 0;
-    material.texDims = 0;
-    material.specularColor = 0;
     material.brightness = 0;
+    // Color map
+    material.col = 0;
+    material.colTexLoc = 0;
+    material.colTexDims = 0;
+    // Specular color map
+    material.specCol = 0;
+    material.specColTexLoc = 0;
+    material.specColTexDims = 0;
+    // Smoothness (r), Bump map (g)
     material.smoothness = 0;
+    material.compressedTexLoc = 0;
+    material.compressedTexDims = 0;
+    // Normals map
+    material.normalsTexLoc = 0;
+    material.normalsTexDims = 0;
  
     return material;
 }

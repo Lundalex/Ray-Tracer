@@ -7,13 +7,14 @@ using System.Threading.Tasks;
 
 // Import utils from Resources.cs
 using Resources2;
-using System;
 // Usage: Utils.(functionName)()
 
 public class MeshHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
+    // public List<(int materialIndex, string property, Texture2D[] texture)> materialTextures;
     public Texture2D[] materialTextures;
+    public Material[] materials;
     public bool DesignatedVertices;
     public int MaxAtlasDims;
     public int MaxDepthSceneBVH;

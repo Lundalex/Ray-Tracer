@@ -104,6 +104,7 @@ public class Main : MonoBehaviour
     private bool RenderThisFrame = true;
     private Vector3 lastWorldSpaceCameraPos;
     private Matrix4x4 lastCameraTransform;
+    private bool[] LoggedWarnings = new bool[2];
 
 
     private void Start()
@@ -225,7 +226,8 @@ public class Main : MonoBehaviour
  
         int[] resolutionArray = new int[] { Resolution.x, Resolution.y };
         rtShader.SetInts("Resolution", resolutionArray);
- 
+
+        if (MaxBounceCount != 1 && !LoggedWarnings[0]) { LoggedWarnings[0] = true; Debug.LogWarning("ReSTIR DL not designed for multi-bounce rays. Additional ray bounces may lead to unexpected results"); }
         rtShader.SetInt("MaxBounceCount", MaxBounceCount);
         rtShader.SetInt("RaysPerPixel", RaysPerPixel);
         rtShader.SetFloat("ScatterProbability", ScatterProbability);
@@ -237,6 +239,7 @@ public class Main : MonoBehaviour
  
         rtShader.SetVector("ViewSpaceDims", new Vector2(viewSpaceWidth, viewSpaceHeight));
  
+        if (DefocusStrength != 0 && !LoggedWarnings[1]) { LoggedWarnings[1] = true; Debug.LogWarning("ReSTIR not designed for focus ray modifiers. Enabling this will decrease the effectiveness of spatiotemporal reuse"); }
         rtShader.SetFloat("DefocusStrength", DefocusStrength);
         rtShader.SetFloat("FocalPlaneFactor", FocalPlaneFactor);
  
@@ -280,8 +283,8 @@ public class Main : MonoBehaviour
         {
             Material2s[i] = new Material2
             {
-                color = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
-                specularColor = new float3(1, 1, 1), // Specular color is currently set to white for all materials
+                col = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
+                specCol = new float3(1, 1, 1), // Specular color is currently set to white for all materials
                 brightness = MatTypesInput1[i].w,
                 smoothness = MatTypesInput2[i].x
             };
@@ -292,8 +295,8 @@ public class Main : MonoBehaviour
 
         for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length && i < AtlasRects.Length; i++)
         {
-            Material2s[i].texLoc = new int2((int)(AtlasRects[i].x * TextureAtlas.width), (int)(AtlasRects[i].y * TextureAtlas.height));
-            Material2s[i].texDims = new int2((int)(AtlasRects[i].width * TextureAtlas.width), (int)(AtlasRects[i].height * TextureAtlas.height));
+            Material2s[i].colTexLoc = new int2((int)(AtlasRects[i].x * TextureAtlas.width), (int)(AtlasRects[i].y * TextureAtlas.height));
+            Material2s[i].colTexDims = new int2((int)(AtlasRects[i].width * TextureAtlas.width), (int)(AtlasRects[i].height * TextureAtlas.height));
         }
 
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);

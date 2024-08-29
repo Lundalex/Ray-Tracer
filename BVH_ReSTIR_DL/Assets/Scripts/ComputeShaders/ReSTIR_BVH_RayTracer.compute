@@ -87,7 +87,15 @@ Texture2D<float4> EnvironmentMap; // float4(r, g, b, brightness)
 const float2 TextureAtlasDims;
 const float2 EnvironmentMapTexDims;
 
-float4 SampleEnvironmentMap(float3 dir)
+float3 SampleTexture(float2 uv, uint2 texLoc, uint2 texDims, Texture2D tex)
+{
+    uint2 texelCoord = texLoc + (uint2)(uv * float2(texDims.x, texDims.y));
+    float4 col = tex.Load(int3(texelCoord, 0));
+ 
+    return col.xyz;
+}
+
+float3 SampleEnvironmentMap(float3 dir)
 {
     dir = -dir;
 
@@ -97,25 +105,10 @@ float4 SampleEnvironmentMap(float3 dir)
     
     float u = (theta / (2.0 * PI)) + 0.5;
     float v = 0.5 - (phi / PI);
-    float2 texCoords = int2(float2(u, v) * EnvironmentMapTexDims);
- 
-    int2 iTexCoords = int2(texCoords);
-    float2 fTexCoords = frac(texCoords);
- 
-    int2 texel00 = iTexCoords % EnvironmentMapTexDims;
-    int2 texel10 = (iTexCoords + int2(1, 0)) % EnvironmentMapTexDims;
-    int2 texel01 = (iTexCoords + int2(0, 1)) % EnvironmentMapTexDims;
-    int2 texel11 = (iTexCoords + int2(1, 1)) % EnvironmentMapTexDims;
- 
-    float4 col00 = EnvironmentMap[texel00];
-    float4 col10 = EnvironmentMap[texel10];
-    float4 col01 = EnvironmentMap[texel01];
-    float4 col11 = EnvironmentMap[texel11];
- 
-    float4 col0 = lerp(col00, col10, fTexCoords.x);
-    float4 col1 = lerp(col01, col11, fTexCoords.x);
-    float4 col = lerp(col0, col1, fTexCoords.y);
- 
+    float2 uv = float2(u, v);
+
+    float3 col = SampleTexture(uv, int2(0, 0), EnvironmentMapTexDims, EnvironmentMap);
+
     return col;
 }
  
@@ -290,30 +283,6 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
     return hitInfo;
 }
  
-float3 SampleTexColor(float2 uv, uint2 texLoc, uint2 texDims)
-{
-    float2 texCoords = int2(uv * texDims);
- 
-    int2 iTexCoords = int2(texCoords);
-    float2 fTexCoords = frac(texCoords);
- 
-    int2 texel00 = iTexCoords % texDims;
-    int2 texel10 = (iTexCoords + int2(1, 0)) % texDims;
-    int2 texel01 = (iTexCoords + int2(0, 1)) % texDims;
-    int2 texel11 = (iTexCoords + int2(1, 1)) % texDims;
- 
-    float4 col00 = TextureAtlas[texLoc + texel00];
-    float4 col10 = TextureAtlas[texLoc + texel10];
-    float4 col01 = TextureAtlas[texLoc + texel01];
-    float4 col11 = TextureAtlas[texLoc + texel11];
- 
-    float4 col0 = lerp(col00, col10, fTexCoords.x);
-    float4 col1 = lerp(col01, col11, fTexCoords.x);
-    float4 col = lerp(col0, col1, fTexCoords.y);
- 
-    return col.xyz;
-}
- 
 int LightObjectReservoirSample(inout uint state)
 {
     int firstIndex = randIntSpan(0, EmittingObjectsNum, state); // 1 -> EmittingObjectsNum
@@ -437,15 +406,14 @@ void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, i
         float candidateWeight = GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness);
  
         // Visibility reuse
-        // Expensive due to the need for casting a ray, but removes most visibility noise from the end RT result
-        // Doesn't work currently
+        // Expensive due to the need for casting a ray, but removes all visibility noise from the end result
         if (DoVisibilityReuse)
         {
             Ray ray = InitRay(hitPoint, dir);
             DebugData t;
  
             // Traverse the scene to validate the candidate
-            // Then discard the candidate if the point is occluded
+            // Then discard the candidate from further use if the target is occluded
             HitInfo hitInfo = GetRayCollision(ray, t);
             if (any(dot2(hitInfo.hitPoint - worldPoint) > sqr(VisibilityReuseThreshold)) || lightObject.brightness == 0) candidateWeight = 0;
         }
@@ -499,7 +467,8 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
  
     // Ray setup
     Ray ray;
-    ray.pos = WorldSpaceCameraPos;
+    float3 jitter = mul(CameraTransform, float3(randPointInCircle(state) * DefocusStrength, 0));
+    ray.pos = WorldSpaceCameraPos + jitter * FocalPlaneFactor;
     ray.dir = normalize(worldFocalPos - ray.pos);
     ray.invDir = 1 / ray.dir;
  
@@ -690,7 +659,49 @@ void UpdateCandidateWeight(float brightness, uint candidateIndex)
  
     return;
 }
- 
+
+Material2 GetMaterial(HitInfo hitInfo)
+{
+    Material2 material = InitMaterial();
+    if (hitInfo.dst != 1.#INF) material = Materials[hitInfo.materialIndex];
+    return material;
+}
+
+bool IsInvalidCandidate(uint bounceCount, Material2 material, HitInfo hitInfo, Ray ray)
+{
+    return (bounceCount == 1 && material.brightness <= 0) || 
+           (bounceCount == 0 && dot(hitInfo.normal, ray.dir) < 0) || 
+           (hitInfo.dst == 1.#INF);
+}
+
+float3 CalculateScatterDirection(HitInfo hitInfo, inout uint state)
+{
+    return normalize(hitInfo.normal + randPointOnUnitSphere(state));
+}
+
+float3 CalculateRayDirection(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce, inout uint state)
+{
+    float3 scatterDir = CalculateScatterDirection(hitInfo, state);
+    float3 specularDir = reflect(ray.dir, hitInfo.normal);
+    return normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
+}
+
+float3 CalculateEmittedLight(Material2 material, HitInfo hitInfo)
+{
+    float3 sampleCol = all(material.col == -1) ? 
+                        SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : 
+                        material.col;
+    return sampleCol * material.brightness / sqr(hitInfo.dst);
+}
+
+float3 CalculateRayColor(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce)
+{
+    float3 sampleCol = all(material.col == -1) ? 
+                        SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : 
+                        material.col;
+    return lerp(sampleCol, material.specCol, isSpecularBounce);
+}
+
 TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData debugData, inout uint state)
 {
     TraceInfo traceInfo;
@@ -698,67 +709,43 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
     traceInfo.rayColor = dot(hitInfo.normal, ray.dir);
     traceInfo.directLight = float3(0, 0, 0);
     traceInfo.indirectLight = float3(0, 0, 0);
- 
-    for (uint bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++) // MaxBounceCount = 1 for direct lighting
-    {
-        if (hitInfo.dst == 1.#INF) break;
- 
-        bool didHit = hitInfo.dst != 1.#INF;
-        
-        // Material2 material = didHit ? Materials[hitInfo.materialIndex] : InitMaterial();
-        Material2 material = InitMaterial();
-        if (didHit) { material = Materials[hitInfo.materialIndex]; }
- 
-        // Candidate validation
-        // UpdateCandidateWeight(float brightness, uint candidateIndex) ! ! !
-        bool invalidCandidate = (bounceCount == 1 && (material.brightness <= 0) < 0) || (bounceCount == 0 && dot(hitInfo.normal, ray.dir) < 0);
-        if (invalidCandidate)
-        {
-            Candidates[candidateIndex] = InitCandidateReservoir();
-        }
 
-        // Calculate new ray pos
-        ray.pos = hitInfo.hitPoint;
- 
-        // Ray direction already decided for first bounce!
-        bool isSpecularBounce = false;
+    for (uint bounceCount = 0; bounceCount <= MaxBounceCount; bounceCount++) {
+        if (hitInfo.dst == 1.#INF) break;
+
+        Material2 material = GetMaterial(hitInfo);
+
+        // Validate candidate and reset if invalid
+        if (IsInvalidCandidate(bounceCount, material, hitInfo, ray)) Candidates[candidateIndex] = InitCandidateReservoir();
+
+        // Calculate new ray direction for bounces beyond the first
         if (bounceCount != 0)
         {
-            // Calculate new ray direction
-            // isSpecularBounce == False -> ray.dir = scatterDir
-            // isSpecularBounce == True -> ray.dir = norm(lerp(scatterDir, specularDir, material.smoothness))
-            isSpecularBounce = ScatterProbability < randNormalized(state);
-            // Cosine weighted randPointOnUnitSphere. This removes the need for any "light spread" calculations
-            float3 scatterDir = normalize(hitInfo.normal + randPointOnUnitSphere(state));
-            float3 specularDir = reflect(ray.dir, hitInfo.normal);
-            ray.dir = normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
- 
+            bool isSpecularBounce = ScatterProbability < randNormalized(state);
+            ray.dir = CalculateRayDirection(ray, hitInfo, material, isSpecularBounce, state);
+
             // Validate ray direction
-            if (dot(hitInfo.normal, ray.dir) < 0)
-            {
-                ray.dir = -ray.dir;
-            }
+            if (dot(hitInfo.normal, ray.dir) < 0) ray.dir = -ray.dir;
         }
- 
-        // Calculate new traceInfo values
-        float3 sampleCol = all(material.color == -1) ? SampleTexColor(hitInfo.uv, material.texLoc, material.texDims) : material.color;
-        float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
-        traceInfo.rayColor *= lerp(sampleCol, material.specularColor, isSpecularBounce);
+
+        // Update trace information
+        float3 emittedLight = CalculateEmittedLight(material, hitInfo);
+        traceInfo.rayColor *= CalculateRayColor(ray, hitInfo, material, bounceCount != 0);
         traceInfo.totTravelDst += hitInfo.dst;
-        
+
         if (bounceCount == 0) traceInfo.directLight += emittedLight * traceInfo.rayColor;
         else traceInfo.indirectLight += emittedLight * traceInfo.rayColor;
- 
-        // Evaluate the amount of light contributed by the candidate and update it's weight accordingly (linear relationship)
+
+        // Update candidate weight on first bounce
         if (bounceCount == 1) UpdateCandidateWeight(material.brightness, candidateIndex);
- 
-        // Recast ray
+
+        // Recast ray for the next bounce
         if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
     }
- 
+
     return traceInfo;
 }
- 
+
 [numthreads(TN_RT,TN_RT,1)]
 void TraceRays (uint3 id : SV_DispatchThreadID)
 {
@@ -783,7 +770,8 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
         // Return no color if initial ray trace missed
         if (hitInfo.dst == 1.#INF)
         {
-            Result[id.xy] = SampleEnvironmentMap(hitInfo.incomingDir);
+            float3 col = SampleEnvironmentMap(hitInfo.incomingDir);
+            Result[id.xy] = float4(col.x, col.y, col.z, 0);
             return;
         }
         // Return the emitted light of the first hit object if no further ray direction candidates are found
@@ -792,7 +780,7 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
             Material2 material = Materials[hitInfo.materialIndex];
     
             // Calculate new traceInfo values
-            float3 sampleCol = all(material.color == -1) ? SampleTexColor(hitInfo.uv, material.texLoc, material.texDims) : material.color;
+            float3 sampleCol = all(material.col == -1) ? SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : material.col;
             float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
             float3 col = emittedLight;
     
