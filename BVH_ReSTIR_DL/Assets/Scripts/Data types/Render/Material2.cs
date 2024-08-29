@@ -12,6 +12,7 @@ public struct Material2
     public int2 specColTexDims;
     // Smoothness (r), Bump map (g)
     public float smoothness;
+    public float bump;
     public int2 compressedTexLoc;
     public int2 compressedTexDims;
     // Normals map

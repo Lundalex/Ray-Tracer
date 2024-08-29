@@ -52,6 +52,7 @@ struct Material2
     int2 specColTexDims;
     // Smoothness (r), Bump map (g)
     float smoothness;
+    float bump;
     int2 compressedTexLoc;
     int2 compressedTexDims;
     // Normals map
@@ -69,7 +70,7 @@ struct Ray
 };
 struct HitInfo
 {
-    float dst;
+    float dst; // dst == 1.#INF => didHit = false
     float3 hitPoint;
     float2 uv;
     float3 normal;

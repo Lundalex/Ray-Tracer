@@ -9,6 +9,7 @@ using Resources2;
 
 public class Main : MonoBehaviour
 {
+    public float bump;
     [Header("Camera interaction settings")]
     public float CameraMoveSpeed;
     public float CameraPanSpeed;
@@ -23,9 +24,8 @@ public class Main : MonoBehaviour
  
     [Header("Ray tracer settings")]
     public int MaxBounceCount;
-    public int RaysPerPixel;
     [Range(0.0f, 1.0f)] public float ScatterProbability;
-    [Range(0.0f, 2.0f)] public float DefocusStrength;
+    [Range(0.0f, 0.2f)] public float DefocusStrength;
     public float FocalPlaneFactor; // FocalPlaneFactor must be positive
     public int FrameCount;
     [Header("ReStir settings")]
@@ -111,12 +111,6 @@ public class Main : MonoBehaviour
     {
         lastCameraPosition = transform.position;
         lastCameraRotation = transform.rotation;
- 
-        if (RaysPerPixel != 1)
-        {
-            Debug.Log("RaysPerPixel changed from " + RaysPerPixel + " to 1 because no other values are supported currently!");
-            RaysPerPixel = 1;
-        }
         
         UpdatePerFrame();
         UpdateSettings(true);
@@ -229,7 +223,6 @@ public class Main : MonoBehaviour
 
         if (MaxBounceCount != 1 && !LoggedWarnings[0]) { LoggedWarnings[0] = true; Debug.LogWarning("ReSTIR DL not designed for multi-bounce rays. Additional ray bounces may lead to unexpected results"); }
         rtShader.SetInt("MaxBounceCount", MaxBounceCount);
-        rtShader.SetInt("RaysPerPixel", RaysPerPixel);
         rtShader.SetFloat("ScatterProbability", ScatterProbability);
  
         float aspectRatio = Resolution.x / Resolution.y;
@@ -255,14 +248,20 @@ public class Main : MonoBehaviour
         rtShader.SetFloat("PixelMovementThreshold", PixelMovementThreshold);
         rtShader.SetFloat("SpatialHitPointDiffThreshold", SpatialHitPointDiffThreshold);
         rtShader.SetFloat("SpatialNormalsAngleThreshold", SpatialNormalsAngleThreshold);
-        rtShader.SetBool("DoVisibilityReuse", DoVisibilityReuse);
         rtShader.SetInt("TemporalCandidatesNum", TemporalCandidatesNum);
         rtShader.SetFloat("TemporalPrecisionThreshold", TemporalPrecisionThreshold);
         rtShader.SetFloat("VisibilityReuseThreshold", VisibilityReuseThreshold);
+
+        rtShader.SetFloat("bump", bump);
+
+        // Multi-compilation
+        if (DoVisibilityReuse) rtShader.EnableKeyword("VISIBILITY_REUSE");
+        else rtShader.DisableKeyword("VISIBILITY_REUSE");
  
         // Object Textures
         int[] textureAtlasDims = new int[] { TextureAtlas.width, TextureAtlas.height };
         rtShader.SetInts("TextureAtlasDims", textureAtlasDims);
+        rtShader.SetTexture(0, "TextureAtlas", TextureAtlas);
         rtShader.SetTexture(4, "TextureAtlas", TextureAtlas);
  
         // Environment Map Texture
@@ -285,6 +284,7 @@ public class Main : MonoBehaviour
             {
                 col = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
                 specCol = new float3(1, 1, 1), // Specular color is currently set to white for all materials
+                bump = -1,
                 brightness = MatTypesInput1[i].w,
                 smoothness = MatTypesInput2[i].x
             };
@@ -320,11 +320,11 @@ public class Main : MonoBehaviour
         shaderHelper.SetLightObjectBuffer(LightObjectBuffer);
  
         // ReStir
-        CandidateBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        CandidateBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y);
         shaderHelper.SetCandidateBuffer(CandidateBuffer);
-        CandidateReuseBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        CandidateReuseBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y);
         shaderHelper.SetCandidateReuseBuffer(CandidateReuseBuffer);
-        TemporalFrameBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y * RaysPerPixel);
+        TemporalFrameBuffer = ComputeHelper.CreateStructuredBuffer<CandidateReservoir>(Resolution.x * Resolution.y);
         shaderHelper.SetTemporalFrameBuffer(TemporalFrameBuffer);
  
         HitInfoBuffer = ComputeHelper.CreateStructuredBuffer<HitInfo>(Resolution.x * Resolution.y);

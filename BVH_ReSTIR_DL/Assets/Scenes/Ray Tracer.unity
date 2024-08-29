@@ -542,6 +542,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf57d16cf254eb348936bec573a2b16a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  bump: 0
   CameraMoveSpeed: 8
   CameraPanSpeed: 8
   renderTarget: 0
@@ -553,7 +554,6 @@ MonoBehaviour:
     x: 1920
     y: 1080
   MaxBounceCount: 1
-  RaysPerPixel: 1
   ScatterProbability: 1
   DefocusStrength: 0
   FocalPlaneFactor: 1

@@ -3,7 +3,9 @@
 #pragma kernel TransferToOriginal // 2
 #pragma kernel TemporalReuse // 3
 #pragma kernel TraceRays // 4
- 
+
+#pragma multi_compile _ VISIBILITY_REUSE
+
 #include "RendererResources.hlsl"
  
 // Constants
@@ -13,10 +15,11 @@ const uint MaxBVHDepth;
 const uint SceneBVHStartIndex;
 const uint SceneObjectsNum;
 const float ScatterProbability;
+
+const float bump;
  
 // Render quality settings
 const uint MaxBounceCount;
-const uint RaysPerPixel; // Currectly always set to 1
  
 // View settings
 const int2 Resolution;
@@ -47,7 +50,6 @@ const int MaxOffset;
 const uint TemporalCandidatesNum;
 const float SpatialHitPointDiffThreshold;
 const float SpatialNormalsAngleThreshold;
-const bool DoVisibilityReuse;
  
 // ReSTIR - Temporal reuse
 const float TemporalReuseWeight;
@@ -373,60 +375,53 @@ float3 GetRandWorldPointTri(Triangle tri, float4x4 localToWorldMatrix, inout uin
  
 void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, inout uint state)
 {
-    for (uint i = 0; i < RaysPerPixel; i++)
-    {
-        // Weighted light object Sample
-        uint lightObjectIndex = LightObjectReservoirSample(state);
-        LightObject lightObject = LightObjects[lightObjectIndex];
-        uint startTriIndex = lightObject.triStart;
-        uint endTriIndex = lightObject.triStart + lightObject.totTris;
- 
-        // Weighted tri Sample
-        uint triIndex = TriReservoirSample(startTriIndex, endTriIndex, state);
-        Triangle tri = Triangles[triIndex];
-        float3 worldPoint = GetRandWorldPointTri(tri, lightObject.localToWorldMatrix, state);
- 
-        float3 dst = worldPoint - hitPoint;
-        float3 dir = normalize(dst);
- 
-        uint candidateIndex = pixelIndex * RaysPerPixel + i;
-        
-        // Validate direction
-        if (dot(hitNormal, dir) < 0)
-        {
-            // If direction is invalid, abandon the current candidate by assigning an empty reservoir
-            Candidates[candidateIndex] = InitCandidateReservoir();
-            continue;
-        }
+    // Weighted light object Sample
+    uint lightObjectIndex = LightObjectReservoirSample(state);
+    LightObject lightObject = LightObjects[lightObjectIndex];
+    uint startTriIndex = lightObject.triStart;
+    uint endTriIndex = lightObject.triStart + lightObject.totTris;
 
-        float3 worldNormal = normalize(mul(lightObject.localToWorldMatrix, float4(tri.localNormal, 0)).xyz);
- 
-        float hitAngleDot = max(dot(worldNormal, dir), 0);
- 
-        float candidateWeight = GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness);
- 
-        // Visibility reuse
-        // Expensive due to the need for casting a ray, but removes all visibility noise from the end result
-        if (DoVisibilityReuse)
-        {
-            Ray ray = InitRay(hitPoint, dir);
-            DebugData t;
- 
-            // Traverse the scene to validate the candidate
-            // Then discard the candidate from further use if the target is occluded
-            HitInfo hitInfo = GetRayCollision(ray, t);
-            if (any(dot2(hitInfo.hitPoint - worldPoint) > sqr(VisibilityReuseThreshold)) || lightObject.brightness == 0) candidateWeight = 0;
-        }
- 
-        CandidateReservoir candidateReservoir = InitCandidateReservoir(dir, hitPoint, hitNormal, candidateWeight, candidateWeight, 1);
-        Candidates[candidateIndex] = candidateReservoir;
+    // Weighted tri Sample
+    uint triIndex = TriReservoirSample(startTriIndex, endTriIndex, state);
+    Triangle tri = Triangles[triIndex];
+    float3 worldPoint = GetRandWorldPointTri(tri, lightObject.localToWorldMatrix, state);
+
+    float3 dst = worldPoint - hitPoint;
+    float3 dir = normalize(dst);
+
+    // Validate direction
+    if (dot(hitNormal, dir) < 0)
+    {
+        // If direction is invalid, abandon the current candidate by assigning an empty reservoir
+        Candidates[pixelIndex] = InitCandidateReservoir();
+        return;
     }
+
+    float3 worldNormal = normalize(mul(lightObject.localToWorldMatrix, float4(tri.localNormal, 0)).xyz);
+
+    float hitAngleDot = max(dot(worldNormal, dir), 0);
+
+    float candidateWeight = GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness);
+
+    // Visibility reuse
+    // Expensive due to the need for casting a ray, but removes any and all visibility noise from the end result
+    #if VISIBILITY_REUSE
+        Ray ray = InitRay(hitPoint, dir);
+        DebugData t;
+
+        // Traverse the scene to validate the candidate
+        // Then discard the candidate from further use if the target is occluded
+        HitInfo hitInfo = GetRayCollision(ray, t);
+        if (any(dot2(hitInfo.hitPoint - worldPoint) > sqr(VisibilityReuseThreshold)) || lightObject.brightness == 0) candidateWeight = 0;
+    #endif
+
+    CandidateReservoir candidateReservoir = InitCandidateReservoir(dir, hitPoint, hitNormal, candidateWeight, candidateWeight, 1);
+    Candidates[pixelIndex] = candidateReservoir;
 }
  
 uint GetPixelIndex(uint2 threadID)
 {
-    uint rayBaseIndex = (Resolution.x * threadID.y + threadID.x) * RaysPerPixel;
-    return rayBaseIndex;
+    return Resolution.x * threadID.y + threadID.x;
 }
 
 float3 GetFocalPos(float2 uv)
@@ -476,6 +471,10 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
     HitInfo hitInfo = GetRayCollision(ray, debugData);
     bool didHit = hitInfo.dst != 1.#INF;
     hitInfo.incomingDir = ray.dir;
+
+    Material2 material = Materials[hitInfo.materialIndex];
+    float bump = material.bump == -1 ? SampleTexture(hitInfo.uv, material.compressedTexLoc, material.compressedTexDims, TextureAtlas).x : material.bump;
+    hitInfo.hitPoint -= hitInfo.incomingDir * bump;
  
     // Generate a ray bounce direction candidate
     if (didHit) GenerateCandidatesDL2(hitInfo.normal, hitInfo.hitPoint, pixelIndex, state);
@@ -485,6 +484,7 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
  
     // Record data to textures
     bool badMaxBVHDepth = MaxBVHDepth > MAX_BVH_DEPTH;
+    
     DebugOverlay[id.xy] = float4(debugData.triChecks / (float)DebugDataMaxValues.x, debugData.bvChecks / (float)DebugDataMaxValues.y, badMaxBVHDepth, 0);
     
     DepthBuffer[id.xy] = hitInfo.dst;
@@ -497,13 +497,13 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
  
 // ---Kernel "SpatialReusePass": ---
 
-CandidateReservoir SpatialCandidateReservoirSample(uint candidateBaseIndex, uint rayIndex, int2 threadID, inout uint state)
+CandidateReservoir SpatialCandidateReservoirSample(uint pixelBaseIndex, int2 threadID, inout uint state)
 {
     CandidateReservoir spatialReservoir = InitCandidateReservoir();
  
     CandidateReservoir baseReservoir;
-    if (ReuseBufferCycle) baseReservoir = Candidates[candidateBaseIndex];
-    else baseReservoir = CandidatesB[candidateBaseIndex];
+    if (ReuseBufferCycle) baseReservoir = Candidates[pixelBaseIndex];
+    else baseReservoir = CandidatesB[pixelBaseIndex];
 
     spatialReservoir = baseReservoir;
 
@@ -515,11 +515,10 @@ CandidateReservoir SpatialCandidateReservoirSample(uint candidateBaseIndex, uint
 
         // Get candidate weight
         uint pixelIndex = GetPixelIndex(offsetID);
-        uint candidateIndex = pixelIndex * RaysPerPixel + rayIndex;
 
         CandidateReservoir candidateReservoir;
-        if (ReuseBufferCycle) candidateReservoir = Candidates[candidateIndex];
-        else candidateReservoir = CandidatesB[candidateIndex];
+        if (ReuseBufferCycle) candidateReservoir = Candidates[pixelIndex];
+        else candidateReservoir = CandidatesB[pixelIndex];
         if (all(candidateReservoir.dir) == 0) continue;
 
         float hitPointDiff = length(baseReservoir.hitPoint - candidateReservoir.hitPoint);
@@ -547,19 +546,13 @@ void SpatialReusePass (uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF) return;
     uint state = id.y * Resolution.x + id.x + FrameRand;
  
-    uint pixelBaseIndex = GetPixelIndex(id.xy);
-    uint candidateBaseIndex = pixelBaseIndex * RaysPerPixel;
+    uint pixelIndex = GetPixelIndex(id.xy);
  
     // Spatial reservoir sampling for each ray
-    // Each ray only samples from other rays with the same pixel ray index. There should also be a ray-reuse pass, similar to the temporal reuse!
-    for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
-    {
-        uint candidateIndex = candidateBaseIndex + rayIndex;
-        CandidateReservoir newCandidateReservoir = SpatialCandidateReservoirSample(candidateIndex, rayIndex, id.xy, state);
- 
-        if (ReuseBufferCycle) CandidatesB[candidateIndex] = newCandidateReservoir;
-        else Candidates[candidateIndex] = newCandidateReservoir;
-    }
+    CandidateReservoir newCandidateReservoir = SpatialCandidateReservoirSample(pixelIndex, id.xy, state);
+
+    if (ReuseBufferCycle) CandidatesB[pixelIndex] = newCandidateReservoir;
+    else Candidates[pixelIndex] = newCandidateReservoir;
 }
  
 // ---Kernel "TransferToOriginal": ---
@@ -569,14 +562,8 @@ void TransferToOriginal (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)Resolution.x || id.y >= (uint)Resolution.y || DepthBuffer[id.xy] == 1.#INF) return;
  
-    uint pixelBaseIndex = GetPixelIndex(id.xy);
-    uint candidateBaseIndex = pixelBaseIndex * RaysPerPixel;
- 
-    for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
-    {
-        uint candidateIndex = candidateBaseIndex + rayIndex;
-        Candidates[candidateIndex] = CandidatesB[candidateIndex];
-    }
+    uint pixelIndex = GetPixelIndex(id.xy);
+    Candidates[pixelIndex] = CandidatesB[pixelIndex];
 }
  
 // --- Kernel "TemporalReuse": ---
@@ -588,8 +575,7 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
     uint state = id.y * Resolution.x + id.x + FrameRand;
  
     // This frame pixel index
-    uint pixelBaseIndex = GetPixelIndex(id.xy);
-    uint candidateBaseIndex = pixelBaseIndex * RaysPerPixel;
+    uint pixelIndex = GetPixelIndex(id.xy);
 
     // Last Frame pixel index
     float2 uv = float2(id.xy) / float2(Resolution);
@@ -598,32 +584,25 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
     int2 offsetID = int2(lastFrameUV * float2(Resolution));
     if (length(uv - lastFrameUV) > TemporalPrecisionThreshold)
     {
-        for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
-        {
-            uint candidateIndex = candidateBaseIndex + rayIndex;
-            TemporalFrameBuffer[candidateIndex] = Candidates[candidateIndex];
-        }
+        TemporalFrameBuffer[pixelIndex] = Candidates[pixelIndex];
         return;
     }
     else offsetID = id.xy;
 
-    uint lastFramePixelBaseIndex = GetPixelIndex(offsetID);
-    uint lastFrameCandidateBaseIndex = lastFramePixelBaseIndex * RaysPerPixel;
+    uint lastFramePixelIndex = GetPixelIndex(offsetID);
  
-    // Temporal reuse for each ray
-    for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
+    // --- Temporal reuse ---
+
+    // Evaluate pixel frame-to-frame movement
+    // Temp. Replace with a more sophisticated function.
+    float pixelHitPointMovement = length(RayHitPointsA[id.xy] - RayHitPointsB[id.xy]);
+
+    CandidateReservoir thisFrameReservoir = Candidates[pixelIndex];
+
+    if (pixelHitPointMovement <= PixelMovementThreshold)
     {
-        uint candidateIndex = candidateBaseIndex + rayIndex;
-        uint lastFrameCandidateIndex = lastFrameCandidateBaseIndex + rayIndex;
- 
-        // Evaluate pixel frame-to-frame movement
-        // Temp. Replace with a more sophisticated function.
-        float pixelHitPointMovement = length(RayHitPointsA[id.xy] - RayHitPointsB[id.xy]);
-        if (pixelHitPointMovement > PixelMovementThreshold) continue;
- 
-        CandidateReservoir thisFrameReservoir = Candidates[candidateIndex];
-        CandidateReservoir lastFrameCandidate = TemporalFrameBuffer[lastFrameCandidateIndex];
- 
+        CandidateReservoir lastFrameCandidate = TemporalFrameBuffer[lastFramePixelIndex];
+
         float adjustedThisFrameWeight = thisFrameReservoir.totWeights * (1.0 - TemporalReuseWeight);
         float adjustedLastFrameWeight = lastFrameCandidate.totWeights * TemporalReuseWeight;
         float totWeights = adjustedThisFrameWeight + adjustedLastFrameWeight;
@@ -639,16 +618,16 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
         thisFrameReservoir.totWeights = avg(thisFrameReservoir.totWeights * (1.0 - TemporalReuseWeight),
                                             lastFrameCandidate.totWeights * TemporalReuseWeight);
         thisFrameReservoir.totCandidates = avg(thisFrameReservoir.totCandidates * (1.0 - TemporalReuseWeight),
-                                               lastFrameCandidate.totCandidates * TemporalReuseWeight);
-        
-        Candidates[candidateIndex] = thisFrameReservoir;
-        TemporalFrameBuffer[candidateIndex] = thisFrameReservoir;
+                                                lastFrameCandidate.totCandidates * TemporalReuseWeight);
     }
+    
+    Candidates[pixelIndex] = thisFrameReservoir;
+    TemporalFrameBuffer[pixelIndex] = thisFrameReservoir;
 }
  
 // --- Kernel "TraceRays": ---
  
-void UpdateCandidateWeight(float brightness, uint candidateIndex)
+void UpdateCandidateWeight(float brightness, uint pixelIndex)
 {
     bool validCandidate = brightness > 0;
     float correctionWeight = validCandidate ? 1.#INF: 1.#INF;
@@ -702,7 +681,7 @@ float3 CalculateRayColor(Ray ray, HitInfo hitInfo, Material2 material, bool isSp
     return lerp(sampleCol, material.specCol, isSpecularBounce);
 }
 
-TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData debugData, inout uint state)
+TraceInfo Trace(Ray ray, HitInfo hitInfo, uint pixelIndex, inout DebugData debugData, inout uint state)
 {
     TraceInfo traceInfo;
     traceInfo.totTravelDst = 0;
@@ -716,7 +695,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         Material2 material = GetMaterial(hitInfo);
 
         // Validate candidate and reset if invalid
-        if (IsInvalidCandidate(bounceCount, material, hitInfo, ray)) Candidates[candidateIndex] = InitCandidateReservoir();
+        if (IsInvalidCandidate(bounceCount, material, hitInfo, ray)) Candidates[pixelIndex] = InitCandidateReservoir();
 
         // Calculate new ray direction for bounces beyond the first
         if (bounceCount != 0)
@@ -737,7 +716,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint candidateIndex, inout DebugData d
         else traceInfo.indirectLight += emittedLight * traceInfo.rayColor;
 
         // Update candidate weight on first bounce
-        if (bounceCount == 1) UpdateCandidateWeight(material.brightness, candidateIndex);
+        if (bounceCount == 1) UpdateCandidateWeight(material.brightness, pixelIndex);
 
         // Recast ray for the next bounce
         if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);
@@ -753,62 +732,53 @@ void TraceRays (uint3 id : SV_DispatchThreadID)
     DebugData debugData = InitDebugData(); // Debug data never gets recorded for this kernel
     uint state = id.y * Resolution.x + id.x + FrameRand;
  
-    uint pixelIndex = GetPixelIndex(id.xy); // removed "+ i" to prevent issues if RaysPerPixel != 1
- 
-    TraceInfo combinedTraceInfo;
- 
+    uint pixelIndex = GetPixelIndex(id.xy);
+
     // Retrieve stored hitInfo data
     HitInfo hitInfo = HitInfos[id.y * Resolution.x + id.x];
  
-    // Trace each ray through the scene
-    for (uint rayIndex = 0; rayIndex < RaysPerPixel; rayIndex++)
+    // --- Trace the ray through the scene ---
+
+    // Get a ray direction from the current candidates
+    CandidateReservoir candidateReservoir = Candidates[pixelIndex];
+
+    // Return no color if initial ray trace missed
+    if (hitInfo.dst == 1.#INF)
     {
-        // Get a ray direction from the current candidates
-        uint candidateIndex = pixelIndex * RaysPerPixel + rayIndex;
-        CandidateReservoir candidateReservoir = Candidates[candidateIndex];
- 
-        // Return no color if initial ray trace missed
-        if (hitInfo.dst == 1.#INF)
-        {
-            float3 col = SampleEnvironmentMap(hitInfo.incomingDir);
-            Result[id.xy] = float4(col.x, col.y, col.z, 0);
-            return;
-        }
-        // Return the emitted light of the first hit object if no further ray direction candidates are found
-        else if (all(candidateReservoir.dir) == 0 || dot(hitInfo.normal, candidateReservoir.dir) < 0)
-        {
-            Material2 material = Materials[hitInfo.materialIndex];
-    
-            // Calculate new traceInfo values
-            float3 sampleCol = all(material.col == -1) ? SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : material.col;
-            float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
-            float3 col = emittedLight;
-    
-            Result[id.xy] = float4(col, 0);
-            return;
-        }
- 
-        // Ray setup
-        Ray ray;
-        ray.pos = hitInfo.hitPoint;
-        ray.dir = candidateReservoir.dir;
-        ray.invDir = 1 / ray.dir;
- 
-        // Trace ray
-        TraceInfo traceInfo = Trace(ray, hitInfo, candidateIndex, debugData, state);
- 
-        // Record traceInfo
-        float avgCandidateWeight = candidateReservoir.totWeights / candidateReservoir.totCandidates;
-        float correctionWeight = avgCandidateWeight / candidateReservoir.chosenWeight;
- 
-        combinedTraceInfo.directLight += traceInfo.directLight;
-        combinedTraceInfo.indirectLight += traceInfo.indirectLight * correctionWeight;
-        combinedTraceInfo.totTravelDst += traceInfo.totTravelDst;
+        float3 col = SampleEnvironmentMap(hitInfo.incomingDir);
+        Result[id.xy] = float4(col.x, col.y, col.z, 0);
+        return;
     }
-    combinedTraceInfo.totTravelDst /= RaysPerPixel;
-    float3 combinedLight = combinedTraceInfo.directLight + combinedTraceInfo.indirectLight / sqr(combinedTraceInfo.totTravelDst); // Compensation for candidate weight?
-    combinedLight /= RaysPerPixel;
- 
+    // Return the emitted light of the first hit object if no further ray direction candidates are found
+    else if (all(candidateReservoir.dir) == 0 || dot(hitInfo.normal, candidateReservoir.dir) < 0)
+    {
+        Material2 material = Materials[hitInfo.materialIndex];
+
+        // Calculate new traceInfo values
+        float3 sampleCol = all(material.col == -1) ? SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : material.col;
+        float3 emittedLight = sampleCol * material.brightness / sqr(hitInfo.dst);
+        float3 col = emittedLight;
+
+        Result[id.xy] = float4(col, 0);
+        return;
+    }
+
+    // Ray setup
+    Ray ray;
+    ray.pos = hitInfo.hitPoint;
+    ray.dir = candidateReservoir.dir;
+    ray.invDir = 1 / ray.dir;
+
+    // Trace ray
+    TraceInfo traceInfo = Trace(ray, hitInfo, pixelIndex, debugData, state);
+
+    // Record traceInfo
+    float avgCandidateWeight = candidateReservoir.totWeights / candidateReservoir.totCandidates;
+    float correctionWeight = avgCandidateWeight / candidateReservoir.chosenWeight;
+    traceInfo.indirectLight *= correctionWeight;
+    
+    float3 combinedLight = traceInfo.directLight + (traceInfo.indirectLight / sqr(traceInfo.totTravelDst)); // Compensation for candidate weight?
+
     // Record ray tracer result
     Result[id.xy] = float4(combinedLight, 0);
 }
