@@ -37,10 +37,11 @@ public class ObjectHelper : MonoBehaviour
     private int[] LoadedMeshesLookup;
     private int LastSceneBVHLength = 0;
     private int LoadedVerticesNum;
+    private bool resetMaterials = false;
 
     private void OnValidate()
     {
-        if (m.ProgramStarted) m.DoUpdateSettings = true;
+        if (m.ProgramStarted) { m.DoUpdateSettings = true; m.DoReloadData = true; resetMaterials = true; }
     }
     public (Vertex[], Triangle[]) LoadMesh(Mesh mesh, int baseVertexIndex)
     {
@@ -354,13 +355,13 @@ public class ObjectHelper : MonoBehaviour
     {
         SceneObjectSettings sceneObjectSettings = sceneObject.GetComponentInChildren<SceneObjectSettings>();
         int materialIndex = sceneObjectSettings.MaterialIndex;
-        float brightness = m.Material2s[materialIndex].brightness;
+        float brightness = materialInputs[materialIndex].brightness;
         return brightness;
     }
     private float GetEmittance(SceneObjectData sceneObjectData)
     {
         int materialIndex = sceneObjectData.materialIndex;
-        float brightness = m.Material2s[materialIndex].brightness;
+        float brightness = materialInputs[materialIndex].brightness;
         return brightness;
     }
 
@@ -372,9 +373,9 @@ public class ObjectHelper : MonoBehaviour
         foreach (MaterialInput mat in materialInputs)
         {
             if (mat.colTex != null) textures.Add(mat.colTex);
-            if (mat.normalsTex != null) textures.Add(mat.normalsTex);
             if (mat.bumpTex != null) textures.Add(mat.bumpTex);
             if (mat.smoothnessTex != null) textures.Add(mat.smoothnessTex);
+            if (mat.normalsTex != null) textures.Add(mat.normalsTex);
         }
 
         Texture2D atlas = new Texture2D(MaxAtlasDims, MaxAtlasDims, TextureFormat.RGBA32, false);
@@ -655,7 +656,7 @@ public class ObjectHelper : MonoBehaviour
     public (RenderBV[], Vertex[], RenderTriangle[], SceneObjectData[], LightObject[], Texture2D, Material2[]) ConstructScene()
     {
         // Pack material textures into atlas
-        if (textureAtlas == null) (textureAtlas, materials) = ConstructTextureAtlas();
+        if (textureAtlas == null || resetMaterials) { (textureAtlas, materials) = ConstructTextureAtlas(); resetMaterials = false; }
 
         // Fetch data
         if (FileModeSelect == DataMode.LoadExistingFile)
@@ -693,7 +694,7 @@ public class ObjectHelper : MonoBehaviour
                 {
                     localToWorldMatrix = sceneObjectData.localToWorldMatrix,
                     areaApprox = sceneObjectData.areaApprox,
-                    brightness = m.Material2s[sceneObjectData.materialIndex].brightness,
+                    brightness = materialInputs[sceneObjectData.materialIndex].brightness,
                     triStart = LoadedComponentDatas[sceneObjectData.bvStartIndex].x,
                     totTris = LoadedComponentDatas[sceneObjectData.bvStartIndex].y
                 };

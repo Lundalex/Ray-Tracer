@@ -242,7 +242,11 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
                 HitInfo localHitInfo = InitHitInfo();
         
                 TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
-        
+
+                
+                Material2 material = Materials[sceneObject.materialIndex];
+                if (any(material.normalsTexLoc != -1)) localHitInfo.normal = SampleTexture(localHitInfo.uv, material.normalsTexLoc, material.normalsTexDims, TextureAtlas) * 2 - 1;
+
                 if (localHitInfo.dst < hitInfo.dst)
                 {
                     hitInfo.dst = localHitInfo.dst;
@@ -287,7 +291,7 @@ HitInfo GetRayCollision (Ray ray, inout DebugData debugData)
  
 int LightObjectReservoirSample(inout uint state)
 {
-    int firstIndex = randIntSpan(0, EmittingObjectsNum, state); // 1 -> EmittingObjectsNum
+    int firstIndex = randIntSpan(0, EmittingObjectsNum, state);
     float firstWeight = LightObjects[firstIndex].areaApprox;
     Reservoir reservoir = InitReservoir(firstIndex, firstWeight);
  

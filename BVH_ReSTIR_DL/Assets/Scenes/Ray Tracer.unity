@@ -200,7 +200,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
-  m_AdditionalShaderChannelsFlag: 25
+  m_AdditionalShaderChannelsFlag: -1
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 0
@@ -473,8 +473,8 @@ Camera:
   m_GameObject: {fileID: 1356186225}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.22263145, g: 1, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -571,32 +571,6 @@ MonoBehaviour:
   SpatialNormalsAngleThreshold: 360
   DoVisibilityReuse: 1
   VisibilityReuseThreshold: 5
-  MatTypesInput1:
-  - x: -1
-    y: -1
-    z: -1
-    w: 0
-  - x: 0
-    y: 1
-    z: 0
-    w: 0
-  - x: 1
-    y: 1
-    z: 1
-    w: 60000
-  MatTypesInput2:
-  - x: 1
-    y: 0
-    z: 0
-    w: 0
-  - x: 1
-    y: 0
-    z: 0
-    w: 0
-  - x: 1
-    y: 0
-    z: 0
-    w: 0
   rtShader: {fileID: 7200000, guid: 7606d5fb8e6c542bba823cfe2e8074c2, type: 3}
   ppShader: {fileID: 7200000, guid: f712fc5910f7f44ba9d171388088c9c0, type: 3}
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
@@ -654,9 +628,9 @@ MonoBehaviour:
     normalsTex: {fileID: 0}
     smoothness: 0
     smoothnessTex: {fileID: 0}
-    bump: 2
+    bump: 0
     bumpTex: {fileID: 0}
-  - brightness: 60000
+  - brightness: 20000
     col:
       x: 1
       y: 1
@@ -671,7 +645,7 @@ MonoBehaviour:
   MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10
   SplitResolution: 5
-  FileName: 80kScene
+  FileName: 88kScene
   BVUpdateModeSelect: 0
   FileModeSelect: 1
   ExtensionModeSelect: 0
@@ -782,6 +756,10 @@ PrefabInstance:
       propertyPath: MaterialIndex
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 5994765863569182762, guid: 5dc984a9867fd444a9424e2e301c6f6c, type: 3}
+      propertyPath: m_Mesh
+      value: 
+      objectReference: {fileID: -2432090755550338912, guid: 3125617832c65624b8584753124058e9, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -866,7 +844,7 @@ PrefabInstance:
     - target: {fileID: 9055984037933550830, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: m_Mesh
       value: 
-      objectReference: {fileID: -2432090755550338912, guid: d4fb84c7276de4d3a8c1c800329d5bf8, type: 3}
+      objectReference: {fileID: -2432090755550338912, guid: 0e1ae4c05ce776b4994d0c5a7cd28ee5, type: 3}
     - target: {fileID: 9189337742774499530, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: MaterialKey
       value: 0

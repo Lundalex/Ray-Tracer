@@ -43,10 +43,6 @@ public class Main : MonoBehaviour
     public bool DoVisibilityReuse;
     public float VisibilityReuseThreshold;
  
-    [Header("Material settings")]
-    public float4[] MatTypesInput1; // xyz: emissionColor; w: emissionStrength
-    public float4[] MatTypesInput2; // x: smoothness
- 
     [Header("References")]
     public ComputeShader rtShader; // BVH + ReStir (direct lighting)
     public ComputeShader ppShader;
@@ -408,10 +404,10 @@ public class Main : MonoBehaviour
         CreateTextures();
  
         ComputeHelper.DispatchKernel(rtShader, "InitialTrace", Resolution, RayTracerThreadSize);
+
+        if (SpatialReuseIterations > 0) SpatialReuse();
  
         if (TemporalReuseWeight > 0) ComputeHelper.DispatchKernel(rtShader, "TemporalReuse", Resolution, RayTracerThreadSize);
- 
-        if (SpatialReuseIterations > 0) SpatialReuse();
  
         ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
     }
