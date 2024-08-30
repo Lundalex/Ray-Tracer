@@ -601,7 +601,7 @@ MonoBehaviour:
   ppShader: {fileID: 7200000, guid: f712fc5910f7f44ba9d171388088c9c0, type: 3}
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
   shaderHelper: {fileID: 1356186230}
-  meshHelper: {fileID: 1356186231}
+  objectHelper: {fileID: 1356186231}
   asciiHelper: {fileID: 1356186232}
   EnvironmentMapTexture: {fileID: 2800000, guid: 19fe58fce6637d543a6bf457fe7d7f8a, type: 3}
   BlackTexture: {fileID: 28268798066460806, guid: 2e498d1c8094910479dc3e1b768306a4, type: 2}
@@ -633,9 +633,40 @@ MonoBehaviour:
   sceneObjects:
   - {fileID: 1740729473}
   - {fileID: 1251211379}
-  materialTextures:
-  - {fileID: 2800000, guid: e15914c9d03216746afefe8098cdb1e3, type: 3}
-  materials: []
+  materialInputs:
+  - brightness: 0
+    col:
+      x: 0
+      y: 0
+      z: 0
+    colTex: {fileID: 2800000, guid: e15914c9d03216746afefe8098cdb1e3, type: 3}
+    normalsTex: {fileID: 0}
+    smoothness: 0
+    smoothnessTex: {fileID: 0}
+    bump: 0
+    bumpTex: {fileID: 0}
+  - brightness: 0
+    col:
+      x: 0
+      y: 1
+      z: 0
+    colTex: {fileID: 0}
+    normalsTex: {fileID: 0}
+    smoothness: 0
+    smoothnessTex: {fileID: 0}
+    bump: 2
+    bumpTex: {fileID: 0}
+  - brightness: 60000
+    col:
+      x: 1
+      y: 1
+      z: 1
+    colTex: {fileID: 0}
+    normalsTex: {fileID: 0}
+    smoothness: 0
+    smoothnessTex: {fileID: 0}
+    bump: 0
+    bumpTex: {fileID: 0}
   DesignatedVertices: 0
   MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10

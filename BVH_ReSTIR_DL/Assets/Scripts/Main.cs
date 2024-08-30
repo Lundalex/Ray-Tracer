@@ -52,7 +52,7 @@ public class Main : MonoBehaviour
     public ComputeShader ppShader;
     public ComputeShader pcShader;
     public ShaderHelper shaderHelper;
-    public MeshHelper meshHelper;
+    public ObjectHelper objectHelper;
     public AsciiHelper asciiHelper;
     public Texture2D EnvironmentMapTexture;
     public Texture2D BlackTexture;
@@ -275,29 +275,9 @@ public class Main : MonoBehaviour
     private void SetData()
     {
         ComputeHelper.Release(AllBuffers());
- 
-        // Set Material2s data
-        Material2s = new Material2[Func.MaxInt(MatTypesInput1.Length, 1)];
-        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length; i++)
-        {
-            Material2s[i] = new Material2
-            {
-                col = new float3(MatTypesInput1[i].x, MatTypesInput1[i].y, MatTypesInput1[i].z),
-                specCol = new float3(1, 1, 1), // Specular color is currently set to white for all materials
-                bump = -1,
-                brightness = MatTypesInput1[i].w,
-                smoothness = MatTypesInput2[i].x
-            };
-        }
 
         // Construct BVH
-        (BVs, Vertices, RenderTriangles, SceneObjectDatas, LightObjects, TextureAtlas, AtlasRects) = meshHelper.ConstructScene();
-
-        for (int i = 0; i < Material2s.Length && MatTypesInput1.Length != 0 && MatTypesInput1.Length == MatTypesInput2.Length && i < AtlasRects.Length; i++)
-        {
-            Material2s[i].colTexLoc = new int2((int)(AtlasRects[i].x * TextureAtlas.width), (int)(AtlasRects[i].y * TextureAtlas.height));
-            Material2s[i].colTexDims = new int2((int)(AtlasRects[i].width * TextureAtlas.width), (int)(AtlasRects[i].height * TextureAtlas.height));
-        }
+        (BVs, Vertices, RenderTriangles, SceneObjectDatas, LightObjects, TextureAtlas, Material2s) = objectHelper.ConstructScene();
 
         MaterialBuffer = ComputeHelper.CreateStructuredBuffer<Material2>(Material2s);
         shaderHelper.SetMaterialBuffer(MaterialBuffer);

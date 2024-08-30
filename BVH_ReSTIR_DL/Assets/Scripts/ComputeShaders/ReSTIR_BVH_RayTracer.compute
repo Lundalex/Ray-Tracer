@@ -473,7 +473,7 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
     hitInfo.incomingDir = ray.dir;
 
     Material2 material = Materials[hitInfo.materialIndex];
-    float bump = material.bump == -1 ? SampleTexture(hitInfo.uv, material.compressedTexLoc, material.compressedTexDims, TextureAtlas).x : material.bump;
+    float bump = material.bump == -1 ? SampleTexture(hitInfo.uv, material.bumpTexLoc, material.bumpTexDims, TextureAtlas).x : material.bump;
     hitInfo.hitPoint -= hitInfo.incomingDir * bump;
  
     // Generate a ray bounce direction candidate
@@ -675,10 +675,11 @@ float3 CalculateEmittedLight(Material2 material, HitInfo hitInfo)
 
 float3 CalculateRayColor(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce)
 {
+    float3 specCol = 1;
     float3 sampleCol = all(material.col == -1) ? 
                         SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : 
                         material.col;
-    return lerp(sampleCol, material.specCol, isSpecularBounce);
+    return lerp(sampleCol, specCol, isSpecularBounce);
 }
 
 TraceInfo Trace(Ray ray, HitInfo hitInfo, uint pixelIndex, inout DebugData debugData, inout uint state)

@@ -42,19 +42,22 @@ struct LightObject
 struct Material2
 {
     float brightness;
+
     // Color map
     float3 col;
     int2 colTexLoc;
     int2 colTexDims;
-    // Specular color map
-    float3 specCol;
-    int2 specColTexLoc;
-    int2 specColTexDims;
-    // Smoothness (r), Bump map (g)
-    float smoothness;
+
+    // Bump map
     float bump;
-    int2 compressedTexLoc;
-    int2 compressedTexDims;
+    int2 bumpTexLoc;
+    int2 bumpTexDims;
+
+    // Smoothness
+    float smoothness;
+    int2 smoothnessTexLoc;
+    int2 smoothnessTexDims;
+    
     // Normals map
     int2 normalsTexLoc;
     int2 normalsTexDims;
@@ -166,18 +169,22 @@ Material2 InitMaterial()
 {
     Material2 material;
     material.brightness = 0;
+
     // Color map
     material.col = 0;
     material.colTexLoc = 0;
     material.colTexDims = 0;
-    // Specular color map
-    material.specCol = 0;
-    material.specColTexLoc = 0;
-    material.specColTexDims = 0;
-    // Smoothness (r), Bump map (g)
+
+    // Bump map
+    material.bump = 0;
+    material.bumpTexLoc = 0;
+    material.bumpTexDims = 0;
+
+    // Smoothness
     material.smoothness = 0;
-    material.compressedTexLoc = 0;
-    material.compressedTexDims = 0;
+    material.smoothnessTexLoc = 0;
+    material.smoothnessTexDims = 0;
+    
     // Normals map
     material.normalsTexLoc = 0;
     material.normalsTexDims = 0;

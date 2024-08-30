@@ -9,12 +9,11 @@ using System.Threading.Tasks;
 using Resources2;
 // Usage: Utils.(functionName)()
 
-public class MeshHelper : MonoBehaviour
+public class ObjectHelper : MonoBehaviour
 {
     public GameObject[] sceneObjects;
     // public List<(int materialIndex, string property, Texture2D[] texture)> materialTextures;
-    public Texture2D[] materialTextures;
-    public Material[] materials;
+    public MaterialInput[] materialInputs;
     public bool DesignatedVertices;
     public int MaxAtlasDims;
     public int MaxDepthSceneBVH;
@@ -26,7 +25,7 @@ public class MeshHelper : MonoBehaviour
     public Main m;
 
     private Texture2D textureAtlas;
-    private Rect[] AtlasRects;
+    private Material2[] materials;
     private SceneObjectData[] SceneObjectDatas;
     private LightObject[] LightObjects;
     private RenderBV[] LoadedBVs = new RenderBV[0];
@@ -367,14 +366,78 @@ public class MeshHelper : MonoBehaviour
 
     private int GetEmittingObjectsNum(GameObject[] sceneObjects) => sceneObjects.Count(obj => GetEmittance(obj) != 0.0f);
 
-    private (Texture2D, Rect[]) ConstructTextureAtlas()
+    private (Texture2D, Material2[]) ConstructTextureAtlas()
     {
+        List<Texture2D> textures = new List<Texture2D>();
+        foreach (MaterialInput mat in materialInputs)
+        {
+            if (mat.colTex != null) textures.Add(mat.colTex);
+            if (mat.normalsTex != null) textures.Add(mat.normalsTex);
+            if (mat.bumpTex != null) textures.Add(mat.bumpTex);
+            if (mat.smoothnessTex != null) textures.Add(mat.smoothnessTex);
+        }
+
         Texture2D atlas = new Texture2D(MaxAtlasDims, MaxAtlasDims, TextureFormat.RGBA32, false);
-        Rect[] rects = atlas.PackTextures(materialTextures, 1, MaxAtlasDims);
-        
+        Rect[] rects = atlas.PackTextures(textures.ToArray(), 1, MaxAtlasDims);
+
         UnityEngine.Debug.Log("Texture atlas constructed with " + rects.Length + " textures. Width: " + atlas.width + ". Height: " + atlas.height);
 
-        return (atlas, rects);
+        int2 GetTexLoc(int rectIndex) => new((int)(rects[rectIndex].x * atlas.width), (int)(rects[rectIndex].y * atlas.height));
+        int2 GetTexDims(int rectIndex) => new((int)(rects[rectIndex].width * atlas.width), (int)(rects[rectIndex].height * atlas.height));
+
+        int rectIndex = 0;
+        Material2[] renderMaterials = new Material2[materialInputs.Length];
+        for (int i = 0; i < materialInputs.Length; i++)
+        {
+            Material2 renderMat = new Material2();
+            MaterialInput mat = materialInputs[i];
+
+            // Brightness
+            renderMat.brightness = mat.brightness;
+
+            // Col
+            if (mat.colTex != null)
+            {
+                renderMat.colTexLoc = GetTexLoc(rectIndex);
+                renderMat.colTexDims = GetTexDims(rectIndex);
+                renderMat.col = -1;
+                rectIndex++;
+            }
+            else renderMat.col = mat.col;
+
+            // Bump
+            if (mat.bumpTex != null)
+            {
+                renderMat.bumpTexLoc = GetTexLoc(rectIndex);
+                renderMat.bumpTexDims = GetTexDims(rectIndex);
+                renderMat.bump = -1;
+                rectIndex++;
+            }
+            else renderMat.bump = mat.bump;
+
+            // Smoothness
+            if (mat.smoothnessTex != null)
+            {
+                renderMat.smoothnessTexLoc = GetTexLoc(rectIndex);
+                renderMat.smoothnessTexDims = GetTexDims(rectIndex);
+                renderMat.smoothness = -1;
+                rectIndex++;
+            }
+            else renderMat.smoothness = mat.smoothness;
+
+            // Normals
+            if (mat.normalsTex != null)
+            {
+                renderMat.normalsTexLoc = GetTexLoc(rectIndex);
+                renderMat.normalsTexDims = GetTexDims(rectIndex);
+                rectIndex++;
+            }
+            else renderMat.normalsTexLoc = new int2(-1, -1);
+
+            renderMaterials[i] = renderMat;
+        }
+
+        return (atlas, renderMaterials);
     }
 
     private (float3, float3) GetFastBV(float3 localMin, float3 localMax, Matrix4x4 localToWorldMatrix)
@@ -589,17 +652,17 @@ public class MeshHelper : MonoBehaviour
         return (sceneBVHStartIndex, totArea);
     }
 
-    public (RenderBV[], Vertex[], RenderTriangle[], SceneObjectData[], LightObject[], Texture2D, Rect[]) ConstructScene()
+    public (RenderBV[], Vertex[], RenderTriangle[], SceneObjectData[], LightObject[], Texture2D, Material2[]) ConstructScene()
     {
         // Pack material textures into atlas
-        if (textureAtlas == null) (textureAtlas, AtlasRects) = ConstructTextureAtlas();
+        if (textureAtlas == null) (textureAtlas, materials) = ConstructTextureAtlas();
 
         // Fetch data
         if (FileModeSelect == DataMode.LoadExistingFile)
         {
             MultiArrayContainer loadContainer = LoadFromFile(FileName);
 
-            return (loadContainer.loadedBVs, loadContainer.loadedVertices, loadContainer.renderTriangles, loadContainer.sceneObjectDatas, loadContainer.lightObjects, textureAtlas, AtlasRects);
+            return (loadContainer.loadedBVs, loadContainer.loadedVertices, loadContainer.renderTriangles, loadContainer.sceneObjectDatas, loadContainer.lightObjects, textureAtlas, materials);
         }
 
         // --- Scene object BVHs ---
@@ -660,6 +723,6 @@ public class MeshHelper : MonoBehaviour
         // Save Data
         if (FileModeSelect == DataMode.GenerateNewFile) SaveToFile(FileName, maxBVHDepth, emittingObjectsNum, sceneBVHStartIndex, totArea);
 
-        return (LoadedBVs, LoadedVertices, RenderTriangles, SceneObjectDatas, LightObjects, textureAtlas, AtlasRects);
+        return (LoadedBVs, LoadedVertices, RenderTriangles, SceneObjectDatas, LightObjects, textureAtlas, materials);
     }
 }
