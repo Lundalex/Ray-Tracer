@@ -367,6 +367,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 415570648307956575, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
     - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
       propertyPath: MaterialKey
       value: 1
@@ -756,6 +760,10 @@ PrefabInstance:
       propertyPath: MaterialIndex
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 5939456863849124003, guid: 5dc984a9867fd444a9424e2e301c6f6c, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
     - target: {fileID: 5994765863569182762, guid: 5dc984a9867fd444a9424e2e301c6f6c, type: 3}
       propertyPath: m_Mesh
       value: 
@@ -840,7 +848,7 @@ PrefabInstance:
     - target: {fileID: 9003204481926909031, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: -3033667219593020291, guid: d4fb84c7276de4d3a8c1c800329d5bf8, type: 3}
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
     - target: {fileID: 9055984037933550830, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
       propertyPath: m_Mesh
       value: 
@@ -875,6 +883,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3851987752328361799, guid: 62fa4a21de9fcc847a5212fbf355d359, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
     - target: {fileID: 3892193409040073706, guid: 62fa4a21de9fcc847a5212fbf355d359, type: 3}
       propertyPath: MaxDepthBVH
       value: 32
@@ -1008,6 +1020,10 @@ PrefabInstance:
       propertyPath: m_Mesh
       value: 
       objectReference: {fileID: -2138796739762357153, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
+    - target: {fileID: 5159647533802265871, guid: 0f27179da20d44ba09efb9e6d4ec67c8, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
