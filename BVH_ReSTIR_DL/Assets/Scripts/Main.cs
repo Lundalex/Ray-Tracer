@@ -3,13 +3,8 @@ using Debug = UnityEngine.Debug;
 using Unity.Mathematics;
 using System;
 
-// Import utils from Resources2.cs
-using Resources2;
-// Usage: Utils.(functionName)()
-
 public class Main : MonoBehaviour
 {
-    public float bump;
     [Header("Camera interaction settings")]
     public float CameraMoveSpeed;
     public float CameraPanSpeed;
@@ -41,6 +36,7 @@ public class Main : MonoBehaviour
     public float SpatialHitPointDiffThreshold;
     public float SpatialNormalsAngleThreshold;
     public bool DoVisibilityReuse;
+    public bool DoWeightRecalc;
     public float VisibilityReuseThreshold;
  
     [Header("References")]
@@ -248,12 +244,12 @@ public class Main : MonoBehaviour
         rtShader.SetFloat("TemporalPrecisionThreshold", TemporalPrecisionThreshold);
         rtShader.SetFloat("VisibilityReuseThreshold", VisibilityReuseThreshold);
 
-        rtShader.SetFloat("bump", bump);
-
         // Multi-compilation
         if (DoVisibilityReuse) rtShader.EnableKeyword("VISIBILITY_REUSE");
         else rtShader.DisableKeyword("VISIBILITY_REUSE");
- 
+        if (DoWeightRecalc) rtShader.EnableKeyword("WEIGHT_RECALC");
+        else rtShader.DisableKeyword("WEIGHT_RECALC");
+
         // Object Textures
         int[] textureAtlasDims = new int[] { TextureAtlas.width, TextureAtlas.height };
         rtShader.SetInts("TextureAtlasDims", textureAtlasDims);
@@ -405,9 +401,9 @@ public class Main : MonoBehaviour
  
         ComputeHelper.DispatchKernel(rtShader, "InitialTrace", Resolution, RayTracerThreadSize);
 
-        if (SpatialReuseIterations > 0) SpatialReuse();
- 
         if (TemporalReuseWeight > 0) ComputeHelper.DispatchKernel(rtShader, "TemporalReuse", Resolution, RayTracerThreadSize);
+
+        if (SpatialReuseIterations > 0) SpatialReuse();
  
         ComputeHelper.DispatchKernel(rtShader, "TraceRays", Resolution, RayTracerThreadSize);
     }

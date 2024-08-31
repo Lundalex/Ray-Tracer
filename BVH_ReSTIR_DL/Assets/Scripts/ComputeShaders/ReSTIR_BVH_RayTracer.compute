@@ -5,6 +5,7 @@
 #pragma kernel TraceRays // 4
 
 #pragma multi_compile _ VISIBILITY_REUSE
+#pragma multi_compile _ WEIGHT_RECALC
 
 #include "RendererResources.hlsl"
  
@@ -15,8 +16,6 @@ const uint MaxBVHDepth;
 const uint SceneBVHStartIndex;
 const uint SceneObjectsNum;
 const float ScatterProbability;
-
-const float bump;
  
 // Render quality settings
 const uint MaxBounceCount;
@@ -242,7 +241,6 @@ void TraverseSceneBVH(inout HitInfo hitInfo, inout DebugData debugData, Ray ray)
                 HitInfo localHitInfo = InitHitInfo();
         
                 TraverseTrisBVH(localHitInfo, debugData, localRay, sceneObject.bvStartIndex);
-
                 
                 Material2 material = Materials[sceneObject.materialIndex];
                 if (any(material.normalsTexLoc != -1)) localHitInfo.normal = SampleTexture(localHitInfo.uv, material.normalsTexLoc, material.normalsTexDims, TextureAtlas) * 2 - 1;
@@ -346,7 +344,7 @@ int TriReservoirSample(uint startTriIndex, uint endTriIndex, inout uint state)
     return reservoir.chosenIndex;
 }
  
-// For now, BSDFs won't be considered
+// For now, BSDFs won't be considered renderer is using DL. This function is important GI candidate weight calculations
 float GetBRDF() { return 1; }
  
 float GenerateCandidateWeight(float sqrDst, float hitAngleDot, float brightness)
@@ -377,7 +375,7 @@ float3 GetRandWorldPointTri(Triangle tri, float4x4 localToWorldMatrix, inout uin
     return worldPoint;
 }
  
-void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, inout uint state)
+void GenerateCandidatesDL(float3 hitNormal, float3 hitPoint, uint pixelIndex, inout uint state)
 {
     // Weighted light object Sample
     uint lightObjectIndex = LightObjectReservoirSample(state);
@@ -404,8 +402,9 @@ void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, i
     float3 worldNormal = normalize(mul(lightObject.localToWorldMatrix, float4(tri.localNormal, 0)).xyz);
 
     float hitAngleDot = max(dot(worldNormal, dir), 0);
+    float sqrDst = dot2(dst);
 
-    float candidateWeight = GenerateCandidateWeight(dot2(dst), hitAngleDot, lightObject.brightness);
+    float candidateWeight = GenerateCandidateWeight(sqrDst, hitAngleDot, lightObject.brightness);
 
     // Visibility reuse
     // Expensive due to the need for casting a ray, but removes any and all visibility noise from the end result
@@ -416,7 +415,7 @@ void GenerateCandidatesDL2(float3 hitNormal, float3 hitPoint, uint pixelIndex, i
         // Traverse the scene to validate the candidate
         // Then discard the candidate from further use if the target is occluded
         HitInfo hitInfo = GetRayCollision(ray, t);
-        if (any(dot2(hitInfo.hitPoint - worldPoint) > sqr(VisibilityReuseThreshold)) || lightObject.brightness == 0) candidateWeight = 0;
+        if (Materials[hitInfo.materialIndex].brightness == 0) candidateWeight = 0;
     #endif
 
     CandidateReservoir candidateReservoir = InitCandidateReservoir(dir, hitPoint, hitNormal, candidateWeight, candidateWeight, 1);
@@ -481,7 +480,7 @@ void InitialTrace (uint3 id : SV_DispatchThreadID)
     hitInfo.hitPoint -= hitInfo.incomingDir * bump;
  
     // Generate a ray bounce direction candidate
-    if (didHit) GenerateCandidatesDL2(hitInfo.normal, hitInfo.hitPoint, pixelIndex, state);
+    if (didHit) GenerateCandidatesDL(hitInfo.normal, hitInfo.hitPoint, pixelIndex, state);
  
     // Save ray hit info data
     HitInfos[pixelIndex] = hitInfo;
@@ -631,15 +630,16 @@ void TemporalReuse (uint3 id : SV_DispatchThreadID)
  
 // --- Kernel "TraceRays": ---
  
-void UpdateCandidateWeight(float brightness, uint pixelIndex)
+void UpdateCandidateWeight(float sqrDst, float hitAngleDot, float brightness, uint pixelIndex)
 {
+    // Calculate new weight
     bool validCandidate = brightness > 0;
-    float correctionWeight = validCandidate ? 1.#INF: 1.#INF;
- 
-    // Candidate weight should also be modified according to the hit light (light * hitAngleDot * ...) ! ! !
- 
-    // The candiate is invalid if the ray hit an unlit object after the first bounce
- 
+    if (!validCandidate) return;
+    float newWeight = GenerateCandidateWeight(sqrDst, hitAngleDot, brightness);
+
+    // Apply new weight
+    TemporalFrameBuffer[pixelIndex].chosenWeight = newWeight;
+
     return;
 }
 
@@ -657,19 +657,19 @@ bool IsInvalidCandidate(uint bounceCount, Material2 material, HitInfo hitInfo, R
            (hitInfo.dst == 1.#INF);
 }
 
-float3 CalculateScatterDirection(HitInfo hitInfo, inout uint state)
+float3 GetScatterDirection(HitInfo hitInfo, inout uint state)
 {
     return normalize(hitInfo.normal + randPointOnUnitSphere(state));
 }
 
-float3 CalculateRayDirection(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce, inout uint state)
+float3 GetRayDirection(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce, inout uint state)
 {
-    float3 scatterDir = CalculateScatterDirection(hitInfo, state);
+    float3 scatterDir = GetScatterDirection(hitInfo, state);
     float3 specularDir = reflect(ray.dir, hitInfo.normal);
     return normalize(lerp(scatterDir, specularDir, material.smoothness * isSpecularBounce));
 }
 
-float3 CalculateEmittedLight(Material2 material, HitInfo hitInfo)
+float3 GetEmittedLight(Material2 material, HitInfo hitInfo)
 {
     float3 sampleCol = all(material.col == -1) ? 
                         SampleTexture(hitInfo.uv, material.colTexLoc, material.colTexDims, TextureAtlas) : 
@@ -677,7 +677,7 @@ float3 CalculateEmittedLight(Material2 material, HitInfo hitInfo)
     return sampleCol * material.brightness / sqr(hitInfo.dst);
 }
 
-float3 CalculateRayColor(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce)
+float3 GetRayColFactor(Ray ray, HitInfo hitInfo, Material2 material, bool isSpecularBounce)
 {
     float3 specCol = 1;
     float3 sampleCol = all(material.col == -1) ? 
@@ -706,22 +706,26 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint pixelIndex, inout DebugData debug
         if (bounceCount != 0)
         {
             bool isSpecularBounce = ScatterProbability < randNormalized(state);
-            ray.dir = CalculateRayDirection(ray, hitInfo, material, isSpecularBounce, state);
+            ray.dir = GetRayDirection(ray, hitInfo, material, isSpecularBounce, state);
 
             // Validate ray direction
-            if (dot(hitInfo.normal, ray.dir) < 0) ray.dir = -ray.dir;
+            float hitAngleDot = dot(hitInfo.normal, ray.dir);
+            if (hitAngleDot < 0) ray.dir = -ray.dir;
+
+            // Weight recalculations
+            // Update candidate weight on first bounce
+            #if WEIGHT_RECALC
+                if (bounceCount == 1) UpdateCandidateWeight(sqr(hitInfo.dst), hitAngleDot, material.brightness, pixelIndex);
+            #endif
         }
 
         // Update trace information
-        float3 emittedLight = CalculateEmittedLight(material, hitInfo);
-        traceInfo.rayColor *= CalculateRayColor(ray, hitInfo, material, bounceCount != 0);
+        float3 emittedLight = GetEmittedLight(material, hitInfo);
+        traceInfo.rayColor *= GetRayColFactor(ray, hitInfo, material, bounceCount != 0);
         traceInfo.totTravelDst += hitInfo.dst;
 
         if (bounceCount == 0) traceInfo.directLight += emittedLight * traceInfo.rayColor;
         else traceInfo.indirectLight += emittedLight * traceInfo.rayColor;
-
-        // Update candidate weight on first bounce
-        if (bounceCount == 1) UpdateCandidateWeight(material.brightness, pixelIndex);
 
         // Recast ray for the next bounce
         if (bounceCount != MaxBounceCount) hitInfo = GetRayCollision(ray, debugData);

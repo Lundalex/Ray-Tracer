@@ -63,6 +63,7 @@ public class ShaderHelper : MonoBehaviour
     public void SetTemporalFrameBuffer(ComputeBuffer temporalFrameBuffer)
     {
         m.rtShader.SetBuffer(3, "TemporalFrameBuffer", temporalFrameBuffer);
+        m.rtShader.SetBuffer(4, "TemporalFrameBuffer", temporalFrameBuffer);
     }
 
     public void SetHitInfoBuffer(ComputeBuffer hitInfoBuffer)

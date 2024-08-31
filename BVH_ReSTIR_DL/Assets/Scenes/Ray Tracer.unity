@@ -123,6 +123,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &397247669 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2590642388382468085, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
+  m_PrefabInstance: {fileID: 1707828469}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1147595536
 GameObject:
   m_ObjectHideFlags: 0
@@ -432,11 +437,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
---- !u!1 &1251211379 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 968047197865483057, guid: 5dc984a9867fd444a9424e2e301c6f6c, type: 3}
-  m_PrefabInstance: {fileID: 1595772152}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1356186225
 GameObject:
   m_ObjectHideFlags: 0
@@ -610,7 +610,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   sceneObjects:
   - {fileID: 1740729473}
-  - {fileID: 1251211379}
+  - {fileID: 397247669}
   materialInputs:
   - brightness: 0
     col:
@@ -629,7 +629,7 @@ MonoBehaviour:
       y: 1
       z: 0
     colTex: {fileID: 0}
-    normalsTex: {fileID: 0}
+    normalsTex: {fileID: 2800000, guid: 61450775e6d8cb64f9d23e08d2fecfc7, type: 3}
     smoothness: 0
     smoothnessTex: {fileID: 0}
     bump: 0
@@ -649,9 +649,9 @@ MonoBehaviour:
   MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10
   SplitResolution: 5
-  FileName: 88kScene
+  FileName: 8kScene
   BVUpdateModeSelect: 0
-  FileModeSelect: 1
+  FileModeSelect: 0
   ExtensionModeSelect: 0
   m: {fileID: 1356186229}
 --- !u!114 &1356186232
