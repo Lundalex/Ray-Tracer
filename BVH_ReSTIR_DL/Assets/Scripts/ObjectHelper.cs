@@ -374,7 +374,7 @@ public class ObjectHelper : MonoBehaviour
         {
             if (mat.colTex != null) textures.Add(mat.colTex);
             if (mat.bumpTex != null) textures.Add(mat.bumpTex);
-            if (mat.smoothnessTex != null) textures.Add(mat.smoothnessTex);
+            if (mat.roughnessTex != null) textures.Add(mat.roughnessTex);
             if (mat.normalsTex != null) textures.Add(mat.normalsTex);
         }
 
@@ -416,15 +416,25 @@ public class ObjectHelper : MonoBehaviour
             }
             else renderMat.bump = mat.bump;
 
-            // Smoothness
-            if (mat.smoothnessTex != null)
+            // Roughness
+            if (mat.roughnessTex != null)
             {
-                renderMat.smoothnessTexLoc = GetTexLoc(rectIndex);
-                renderMat.smoothnessTexDims = GetTexDims(rectIndex);
-                renderMat.smoothness = -1;
+                renderMat.roughnessTexLoc = GetTexLoc(rectIndex);
+                renderMat.roughnessTexDims = GetTexDims(rectIndex);
+                renderMat.roughness = -1;
                 rectIndex++;
             }
-            else renderMat.smoothness = mat.smoothness;
+            else renderMat.roughness = mat.roughness;
+
+            // Metallicity
+            if (mat.metallicityTex != null)
+            {
+                renderMat.metallicityTexLoc = GetTexLoc(rectIndex);
+                renderMat.metallicityTexDims = GetTexDims(rectIndex);
+                renderMat.metallicity = -1;
+                rectIndex++;
+            }
+            else renderMat.metallicity = mat.metallicity;
 
             // Normals
             if (mat.normalsTex != null)

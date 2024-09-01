@@ -12,9 +12,13 @@ public struct MaterialInput
     // Normals
     public Texture2D normalsTex;
 
-    // Smoothness
-    public float smoothness;
-    public Texture2D smoothnessTex;
+    // Roughness
+    public float roughness;
+    public Texture2D roughnessTex;
+
+    // Metallicity
+    public float metallicity;
+    public Texture2D metallicityTex;
 
     // Bump
     public float bump;

@@ -53,10 +53,15 @@ struct Material2
     int2 bumpTexLoc;
     int2 bumpTexDims;
 
-    // Smoothness
-    float smoothness;
-    int2 smoothnessTexLoc;
-    int2 smoothnessTexDims;
+    // Roughness
+    float roughness;
+    int2 roughnessTexLoc;
+    int2 roughnessTexDims;
+
+    // Metallicity
+    float metallicity;
+    int2 metallicityTexLoc;
+    int2 metallicityTexDims;
     
     // Normals map
     int2 normalsTexLoc;
@@ -106,6 +111,7 @@ struct CandidateReservoir
     float3 dir;
     float3 hitPoint;
     float3 normal;
+    float brdf;
     float chosenWeight;
     float totWeights;
     float totCandidates; // "float" since temporal reuse averages the values from sequential frames
@@ -180,23 +186,29 @@ Material2 InitMaterial()
     material.bumpTexLoc = 0;
     material.bumpTexDims = 0;
 
-    // Smoothness
-    material.smoothness = 0;
-    material.smoothnessTexLoc = 0;
-    material.smoothnessTexDims = 0;
-    
+    // Roughness
+    material.roughness = 0;
+    material.roughnessTexLoc = 0;
+    material.roughnessTexDims = 0;
+
+    // Metallicity
+    material.metallicity = 0;
+    material.metallicityTexLoc = 0;
+    material.metallicityTexDims = 0;
+
     // Normals map
     material.normalsTexLoc = 0;
     material.normalsTexDims = 0;
  
     return material;
 }
-CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float3 normal, float chosenWeight, float totWeights, int totCandidates)
+CandidateReservoir InitCandidateReservoir(float3 dir, float3 hitPoint, float3 normal, float brdf, float chosenWeight, float totWeights, int totCandidates)
 {
     CandidateReservoir candidateReservoir;
     candidateReservoir.dir = dir;
     candidateReservoir.hitPoint = hitPoint;
     candidateReservoir.normal = normal;
+    candidateReservoir.brdf = brdf;
     candidateReservoir.chosenWeight = chosenWeight;
     candidateReservoir.totWeights = totWeights;
     candidateReservoir.totCandidates = totCandidates;
@@ -209,6 +221,7 @@ CandidateReservoir InitCandidateReservoir()
     candidateReservoir.dir = 0;
     candidateReservoir.hitPoint = 0;
     candidateReservoir.normal = 0;
+    candidateReservoir.brdf = 0;
     candidateReservoir.chosenWeight = 0;
     candidateReservoir.totWeights = 0;
     candidateReservoir.totCandidates = 0;

@@ -35,9 +35,12 @@ public class Main : MonoBehaviour
     public float PixelMovementThreshold;
     public float SpatialHitPointDiffThreshold;
     public float SpatialNormalsAngleThreshold;
+    public float SpatialBRDFThreshold;
+    public float VisibilityReuseThreshold;
+    [Header("Multi-compile settings")]
     public bool DoVisibilityReuse;
     public bool DoWeightRecalc;
-    public float VisibilityReuseThreshold;
+    public bool DoBRDF;
  
     [Header("References")]
     public ComputeShader rtShader; // BVH + ReStir (direct lighting)
@@ -240,15 +243,18 @@ public class Main : MonoBehaviour
         rtShader.SetFloat("PixelMovementThreshold", PixelMovementThreshold);
         rtShader.SetFloat("SpatialHitPointDiffThreshold", SpatialHitPointDiffThreshold);
         rtShader.SetFloat("SpatialNormalsAngleThreshold", SpatialNormalsAngleThreshold);
+        rtShader.SetFloat("SpatialBRDFThreshold", SpatialBRDFThreshold);
         rtShader.SetInt("TemporalCandidatesNum", TemporalCandidatesNum);
         rtShader.SetFloat("TemporalPrecisionThreshold", TemporalPrecisionThreshold);
         rtShader.SetFloat("VisibilityReuseThreshold", VisibilityReuseThreshold);
 
         // Multi-compilation
-        if (DoVisibilityReuse) rtShader.EnableKeyword("VISIBILITY_REUSE");
-        else rtShader.DisableKeyword("VISIBILITY_REUSE");
+        if (DoVisibilityReuse) rtShader.EnableKeyword("VIS_REUSE");
+        else rtShader.DisableKeyword("VIS_REUSE");
         if (DoWeightRecalc) rtShader.EnableKeyword("WEIGHT_RECALC");
         else rtShader.DisableKeyword("WEIGHT_RECALC");
+        if (DoBRDF) rtShader.EnableKeyword("BRDF");
+        else rtShader.DisableKeyword("BRDF");
 
         // Object Textures
         int[] textureAtlasDims = new int[] { TextureAtlas.width, TextureAtlas.height };

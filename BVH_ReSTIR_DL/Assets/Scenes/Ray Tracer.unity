@@ -123,10 +123,83 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &397247669 stripped
+--- !u!1001 &340998325
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 415570648307956575, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: -2556215592047087856, guid: 58661194ebfb84c558bd59e371c8b44b, type: 3}
+    - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: MaterialKey
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: MaxDepthBVH
+      value: 14
+      objectReference: {fileID: 0}
+    - target: {fileID: 482655327643619314, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: MaterialIndex
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541027715856167117, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_Name
+      value: Suzanne1k (1)
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 4.4
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 14.6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: -0.08715578
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0.9961947
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 190
+      objectReference: {fileID: 0}
+    - target: {fileID: 8071776066804448517, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 937dd33d46b7540e5bddf3549c921173, type: 3}
+--- !u!1 &886407763 stripped
 GameObject:
-  m_CorrespondingSourceObject: {fileID: 2590642388382468085, guid: ac74e583a0b7e41f7af5f0cf504bd81d, type: 3}
-  m_PrefabInstance: {fileID: 1707828469}
+  m_CorrespondingSourceObject: {fileID: 968047197865483057, guid: 5dc984a9867fd444a9424e2e301c6f6c, type: 3}
+  m_PrefabInstance: {fileID: 1595772152}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &1147595536
 GameObject:
@@ -546,7 +619,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf57d16cf254eb348936bec573a2b16a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  bump: 0
   CameraMoveSpeed: 8
   CameraPanSpeed: 8
   renderTarget: 0
@@ -573,8 +645,11 @@ MonoBehaviour:
   PixelMovementThreshold: 1
   SpatialHitPointDiffThreshold: 0.5
   SpatialNormalsAngleThreshold: 360
-  DoVisibilityReuse: 1
+  SpatialBRDFThreshold: 999
   VisibilityReuseThreshold: 5
+  DoVisibilityReuse: 1
+  DoWeightRecalc: 0
+  DoBRDF: 1
   rtShader: {fileID: 7200000, guid: 7606d5fb8e6c542bba823cfe2e8074c2, type: 3}
   ppShader: {fileID: 7200000, guid: f712fc5910f7f44ba9d171388088c9c0, type: 3}
   pcShader: {fileID: 7200000, guid: 5d1467d1454024747b017afaba8aa25e, type: 3}
@@ -610,17 +685,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   sceneObjects:
   - {fileID: 1740729473}
-  - {fileID: 397247669}
+  - {fileID: 886407763}
   materialInputs:
   - brightness: 0
     col:
-      x: 0
-      y: 0
+      x: 1
+      y: 1
       z: 0
-    colTex: {fileID: 2800000, guid: e15914c9d03216746afefe8098cdb1e3, type: 3}
+    colTex: {fileID: 0}
     normalsTex: {fileID: 0}
-    smoothness: 0
-    smoothnessTex: {fileID: 0}
+    roughness: 0
+    roughnessTex: {fileID: 0}
+    metallicity: 0
+    metallicityTex: {fileID: 0}
     bump: 0
     bumpTex: {fileID: 0}
   - brightness: 0
@@ -630,28 +707,32 @@ MonoBehaviour:
       z: 0
     colTex: {fileID: 0}
     normalsTex: {fileID: 2800000, guid: 61450775e6d8cb64f9d23e08d2fecfc7, type: 3}
-    smoothness: 0
-    smoothnessTex: {fileID: 0}
+    roughness: 1
+    roughnessTex: {fileID: 0}
+    metallicity: 1
+    metallicityTex: {fileID: 0}
     bump: 0
     bumpTex: {fileID: 0}
-  - brightness: 20000
+  - brightness: 40000
     col:
       x: 1
       y: 1
       z: 1
     colTex: {fileID: 0}
     normalsTex: {fileID: 0}
-    smoothness: 0
-    smoothnessTex: {fileID: 0}
+    roughness: 1
+    roughnessTex: {fileID: 0}
+    metallicity: 1
+    metallicityTex: {fileID: 0}
     bump: 0
     bumpTex: {fileID: 0}
   DesignatedVertices: 0
   MaxAtlasDims: 16384
   MaxDepthSceneBVH: 10
   SplitResolution: 5
-  FileName: 8kScene
+  FileName: 80kScene
   BVUpdateModeSelect: 0
-  FileModeSelect: 0
+  FileModeSelect: 1
   ExtensionModeSelect: 0
   m: {fileID: 1356186229}
 --- !u!114 &1356186232
@@ -1037,6 +1118,7 @@ SceneRoots:
   - {fileID: 5837521244202153576}
   - {fileID: 1707828469}
   - {fileID: 1238442919}
+  - {fileID: 340998325}
   - {fileID: 1595772152}
   - {fileID: 746067165836305723}
   - {fileID: 1147595540}

@@ -13,10 +13,15 @@ public struct Material2
     public int2 bumpTexLoc;
     public int2 bumpTexDims;
 
-    // Smoothness
-    public float smoothness;
-    public int2 smoothnessTexLoc;
-    public int2 smoothnessTexDims;
+    // Roughness
+    public float roughness;
+    public int2 roughnessTexLoc;
+    public int2 roughnessTexDims;
+
+    // Metallicity
+    public float metallicity;
+    public int2 metallicityTexLoc;
+    public int2 metallicityTexDims;
     
     // Normals map
     public int2 normalsTexLoc;
