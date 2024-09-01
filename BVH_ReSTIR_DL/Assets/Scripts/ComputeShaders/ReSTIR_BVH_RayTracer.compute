@@ -737,7 +737,7 @@ TraceInfo Trace(Ray ray, HitInfo hitInfo, uint pixelIndex, inout DebugData debug
             // Weight recalculations
             // Update candidate weight on first bounce
             #if WEIGHT_RECALC
-                if (bounceCount == 1) UpdateCandidateWeight(sqr(hitInfo.dst), hitAngleDot, incomingDir, ray.dir, hitInfo.normal, metallicity, roughness, material.brightness, pixelIndex);
+                if (bounceCount == 1) UpdateCandidateWeight(sqr(hitInfo.dst), max(dot(hitInfo.normal, ray.dir), 0), incomingDir, ray.dir, hitInfo.normal, metallicity, roughness, material.brightness, pixelIndex);
             #endif
         }
 
