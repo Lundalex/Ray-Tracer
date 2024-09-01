@@ -707,7 +707,7 @@ MonoBehaviour:
       z: 0
     colTex: {fileID: 0}
     normalsTex: {fileID: 2800000, guid: 61450775e6d8cb64f9d23e08d2fecfc7, type: 3}
-    roughness: 1
+    roughness: 0.8
     roughnessTex: {fileID: 0}
     metallicity: 1
     metallicityTex: {fileID: 0}
